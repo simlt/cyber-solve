@@ -39,9 +39,17 @@ pub fn scan(screen: &Mat) -> Result<(), String> {
     imgproc::cvt_color(&screen, &mut grey, imgproc::COLOR_BGR2GRAY, 0).unwrap();
     // debug_show(&grey);
     
-    // Search buffer size
+    // Detect buffer size
     let buffer_size = detect_buffer_size(&grey).expect("Failed to detect buffer size");
     println!("Buffer size detected: {}", buffer_size);
+
+    // Detect grid info
+    let grid_info = detect_grid(&grey).expect("Failed to detect grid info");
+    println!("Grid size detected: {}x{}", grid_info.rows, grid_info.cols);
+
+    // Process cell data
+    let grid_data = process_grid(&grey, &grid_info).expect("Failed to process grid data");
+    println!("Grid size detected: {}x{}", grid_info.rows, grid_info.cols);
 
     Ok(())
 }
@@ -78,16 +86,168 @@ fn detect_buffer_size(grey: &Mat) -> Result<i32, String> {
     Ok(buffer_size)
 }
 
+struct GridInfo {
+    left: i32,
+    top: i32,
+    width: i32,
+    height: i32,
+    rows: i32,
+    cols: i32,
+    cells: Vec<cv::Rect>
+}
+
+fn debug_contours(img: &Mat, rects: &Vec<cv::Rect>) {
+    let green_rgba = cv::Scalar::new(0.0, 255.0, 0.0,255.0);
+    let mut contours = Mat::default().unwrap();
+    imgproc::cvt_color(&img, &mut contours, imgproc::COLOR_GRAY2RGBA, 0).unwrap();
+    for rect in rects {
+        imgproc::rectangle(&mut contours, rect.to_owned(), green_rgba, 2, imgproc::FILLED, 0).unwrap();
+    }
+    // Draw debug contours
+    debug_show("contours", &contours);
+}
+
+fn get_contour_rects(img: &Mat) -> Vec<cv::Rect> {
+    // Outscribe bounding box around masked cells
+    let mut cell_contours = opencv::types::VectorOfVectorOfPoint::new();
+    let offset = cv::Point::new(0, 0);
+    imgproc::find_contours(&img, &mut cell_contours, imgproc::RETR_LIST, imgproc::CHAIN_APPROX_SIMPLE, offset).unwrap();
+
+    let mut rects = Vec::new();
+    let rect_area_threshold = 25 * 25 * 5; // cell_w * cell_h * n_cell)
+    for countour in &cell_contours {
+        let rect = imgproc::bounding_rect(&countour).unwrap();
+        if rect.area() > rect_area_threshold {
+            rects.push(rect);
+        }
+    }
+
+    rects
+}
+
+fn dilate_rect(grid_img: &Mat, ksize: cv::Size) -> Vec::<cv::Rect> {
+    let anchor = cv::Point::new(-1,-1);
+    let border_value = imgproc::morphology_default_border_value().unwrap();
+    let kernel = imgproc::get_structuring_element(imgproc::MORPH_RECT, ksize, anchor).unwrap();
+    let mut dilate = Mat::default().unwrap();
+    imgproc::dilate(&grid_img, &mut dilate, &kernel, anchor, 1, cv::BORDER_ISOLATED, border_value).unwrap();
+
+    let mut rects = get_contour_rects(&dilate);
+    // transform coordinates from ROI to parent coordinates
+    let mut size = cv::Size::new(0, 0);
+    let mut offset = cv::Point::new(0, 0);
+    grid_img.locate_roi(&mut size, &mut offset).unwrap();
+    rects.iter_mut().for_each(|rect| { rect.x += offset.x; rect.y += offset.y;});
+
+    rects
+}
+
+fn detect_grid(grey: &Mat) -> Result<GridInfo, String> {    
+    // Blur grid then apply threshold to find cells
+    let mut blur = Mat::default().unwrap();
+    let blur_kernel = cv::Size {width: 35, height: 29};
+    imgproc::gaussian_blur(&grey, &mut blur, blur_kernel, 0.0, 0.0, cv::BORDER_DEFAULT).unwrap();
+    let mut thr_img = Mat::default().unwrap();
+    let gaussian_threshold = 45; // TODO: config
+    imgproc::threshold(&blur, &mut thr_img, gaussian_threshold as f64, 255.0, imgproc::THRESH_BINARY).unwrap();
+    
+    // Extract ROI grid max limit area
+    let grid_left = cfg_i32("grid.left");
+    let grid_right = cfg_i32("grid.right");
+    let grid_top = cfg_i32("grid.top");
+    let grid_bottom = cfg_i32("grid.bottom");
+    let grid_width = grid_right - grid_left;
+    let grid_height = grid_bottom - grid_top;
+    let mut grid_roi = cv::Rect::new(grid_left, grid_top, grid_width, grid_height);
+    let mut grid_thr_img = Mat::roi(&thr_img, grid_roi).unwrap();
+
+    // let mut masked = Mat::default().unwrap();
+    // cv::bitwise_and(&grey, &thr, &mut masked, &cv::no_array().unwrap()).unwrap();
+    // debug_show("masked", &masked);
+
+    // Dilate horizontally to detect rows
+    let dilate_row = 50;
+    let kernel_h = cv::Size::new(dilate_row, 1);
+    let mut rows = dilate_rect(&grid_thr_img, kernel_h);
+    // sort rows by y coordinate
+    rows.sort_by_key(|row| row.y);
+    // debug_contours(&grey, &rows);
+
+    // Adjust top and bottom grid rect if smaller. This avoids extranous data noise during column detection
+    grid_roi.y = rows.first().map(|row| row.y).unwrap_or(grid_roi.y);
+    let new_grid_bottom_y = rows.last().map(|row| row.y + row.height).unwrap_or(grid_roi.y + grid_roi.height);
+    grid_roi.height = new_grid_bottom_y - grid_roi.y;
+    grid_thr_img = Mat::roi(&thr_img, grid_roi).unwrap();
+
+    // Dilate vertically to detect cols
+    let dilate_col = 50;
+    let kernel_v = cv::Size::new(1, dilate_col);
+    let mut cols = dilate_rect(&grid_thr_img, kernel_v);
+    // Sort cols by x thr_img coordinate
+    cols.sort_by_key(|col| col.x);
+    // debug_contours(&grey, &cols);
+
+    // Map rows and cols to cells rectangles
+    let mut cells = Vec::new();
+    for row in &rows {
+        for col in &cols {
+            // map to image coordinates
+            let cell_rect = cv::Rect::new(col.x, row.y, col.width, row.height);
+            cells.push(cell_rect);
+        }
+    }
+    
+    let grid_info = GridInfo {
+        left: grid_left,
+        top: grid_top,
+        width: grid_width,
+        height: grid_height,
+        rows: rows.len() as i32,
+        cols: cols.len() as i32,
+        cells,
+    };
+    Ok(grid_info)
+}
+
+fn process_grid(grey: &Mat, grid_info: &GridInfo) -> Result<(), String> {
+    debug_contours(grey, &grid_info.cells);
+
+    Ok(())
+}
+
+
+
+// TESTS
+// cfg!("test");
+static FILE_TEST_5: &str = "assets/images/test_5x5.jpg";
+// cfg!("test");
+static FILE_TEST_6: &str = "assets/images/test_6x6.png";
+
 #[test]
 fn test_scan() {
-    let test_screen = imread("assets/images/test1.png", ImreadModes::IMREAD_UNCHANGED as i32).expect("File test1.png not found");
-    // debug_show(&test_screen);
-    scan(&test_screen);
+    let test_screen = imread(FILE_TEST_6, ImreadModes::IMREAD_UNCHANGED as i32).expect(format!("File {} not found", FILE_TEST_6).as_str());
+    scan(&test_screen).unwrap();
 }
 
 #[test]
 fn test_buffer() {
-    let test_screen = imread("assets/images/test1.png", ImreadModes::IMREAD_GRAYSCALE as i32).expect("File test1.png not found");
+    let test_screen = imread(FILE_TEST_6, ImreadModes::IMREAD_GRAYSCALE as i32).expect(format!("File {} not found", FILE_TEST_6).as_str());
     let buffer_size = detect_buffer_size(&test_screen).unwrap();
-    assert!(buffer_size == 8);
+    assert_eq!(buffer_size, 8);
+}
+
+#[test]
+fn test_grid_5() {
+    let test_screen = imread(FILE_TEST_5, ImreadModes::IMREAD_GRAYSCALE as i32).expect(format!("File {} not found", FILE_TEST_5).as_str());
+    let grid_info = detect_grid(&test_screen).unwrap();
+    assert_eq!(grid_info.rows, 5);
+    assert_eq!(grid_info.cols, 5);
+}
+
+#[test]
+fn test_grid_6() {
+    let test_screen = imread(FILE_TEST_6, ImreadModes::IMREAD_GRAYSCALE as i32).expect(format!("File {} not found", FILE_TEST_6).as_str());
+    let grid_info = detect_grid(&test_screen).unwrap();
+    assert_eq!(grid_info.rows, 6);
+    assert_eq!(grid_info.cols, 6);
 }

@@ -5,5 +5,12 @@
     "right": 1205,
     "top": 190,
     "bottom": 235
+  },
+  "grid": {
+    "$comments": "Grid size also affects horizontal grid offset! 5x5, 6x6, etc...",
+    "left": 305,
+    "right": 675,
+    "top": 355,
+    "bottom": 715
   }
 }
