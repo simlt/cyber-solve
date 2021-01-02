@@ -1,0 +1,9 @@
+{
+  "buffer": {
+    "$comments": "left/right limit may change depending on puzzle grid size (5x5 are more offset to the left wrt 6x6)",
+    "left": 830,
+    "right": 1205,
+    "top": 190,
+    "bottom": 235
+  }
+}

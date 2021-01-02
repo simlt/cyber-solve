@@ -1,0 +1,45 @@
+{
+    // Usare IntelliSense per informazioni sui possibili attributi.
+    // Al passaggio del mouse vengono visualizzate le descrizioni degli attributi esistenti.
+    // Per altre informazioni, visitare: https://go.microsoft.com/fwlink/?linkid=830387
+    "version": "0.2.0",
+    "configurations": [
+        {
+            "type": "lldb",
+            "request": "launch",
+            "name": "Debug executable 'rust-cyber-solve'",
+            "cargo": {
+                "args": [
+                    "build",
+                    "--bin=rust-cyber-solve",
+                    "--package=rust-cyber-solve"
+                ],
+                "filter": {
+                    "name": "rust-cyber-solve",
+                    "kind": "bin"
+                }
+            },
+            "args": [],
+            "cwd": "${workspaceFolder}"
+        },
+        {
+            "type": "lldb",
+            "request": "launch",
+            "name": "Debug unit tests in executable 'rust-cyber-solve'",
+            "cargo": {
+                "args": [
+                    "test",
+                    "--no-run",
+                    "--bin=rust-cyber-solve",
+                    "--package=rust-cyber-solve"
+                ],
+                "filter": {
+                    "name": "rust-cyber-solve",
+                    "kind": "bin"
+                }
+            },
+            "args": [],
+            "cwd": "${workspaceFolder}"
+        }
+    ]
+}
