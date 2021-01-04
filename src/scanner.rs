@@ -1,18 +1,24 @@
-use opencv::core as cv;
-use opencv::imgproc as imgproc;
-use opencv::highgui;
-use opencv::imgcodecs::{ imread, ImreadModes};
 use cv::Mat;
-use cv::MatTrait;
+use opencv::core as cv;
+use opencv::highgui;
+use opencv::imgcodecs::{imread, ImreadModes};
+use opencv::imgproc;
+use opencv::prelude::*;
 
-use std::ffi::c_void;
 use dxgcap::DXGIManager;
+use std::{collections::HashMap, ffi::c_void};
 
-use crate::configuration::cfg_i32;
+use crate::configuration::{cfg_i32, cfg_str_vec};
+use crate::ocr::recognize_cell;
+use crate::types::*;
 
-fn debug_show(name: &str, mat: &Mat) {
-    let wait_time = 5000; // delay ms
-    highgui::named_window(name, highgui::WINDOW_AUTOSIZE/* highgui::WINDOW_NORMAL |  highgui::WINDOW_KEEPRATIO */).unwrap();
+pub fn debug_show(name: &str, mat: &Mat) {
+    let wait_time = 3000; // delay ms
+    highgui::named_window(
+        name,
+        highgui::WINDOW_AUTOSIZE, /* highgui::WINDOW_NORMAL |  highgui::WINDOW_KEEPRATIO */
+    )
+    .unwrap();
     highgui::imshow(name, mat).unwrap();
     highgui::wait_key(wait_time).unwrap();
     highgui::destroy_window(name).unwrap();
@@ -22,9 +28,19 @@ pub fn screenshot() -> Result<Mat, String> {
     let mut manager = DXGIManager::new(300).unwrap();
     let (mut bgra, (width, height)) = manager.capture_frame_components().unwrap();
     let ptr = bgra.as_mut_ptr() as *mut c_void;
-    let mat_result = unsafe { Mat::new_rows_cols_with_data(height as i32, width as i32, cv::CV_8UC4, ptr, cv::Mat_AUTO_STEP) };
-    let mat = mat_result.expect("Failed to initialize matrix data").clone(); // Deep clone data to avoid dangling pointer
-    // debug_show("screenshot", &mat);
+    let mat_result = unsafe {
+        Mat::new_rows_cols_with_data(
+            height as i32,
+            width as i32,
+            cv::CV_8UC4,
+            ptr,
+            cv::Mat_AUTO_STEP,
+        )
+    };
+    let mat = mat_result
+        .expect("Failed to initialize matrix data")
+        .clone(); // Deep clone data to avoid dangling pointer
+                  // debug_show("screenshot", &mat);
     Ok(mat)
 }
 
@@ -33,12 +49,14 @@ pub fn capture_and_scan() -> Result<(), String> {
     scan(&screen)
 }
 
-pub fn scan(screen: &Mat) -> Result<(), String> {
-    let mut grey = unsafe { Mat::new_rows_cols(screen.rows(), screen.cols(), cv::CV_8UC1).expect("Failed to initialize matrix") };
+pub fn scan(screen: &Mat) -> Result<Puzzle, String> {
+    let mut grey = unsafe {
+        Mat::new_rows_cols(screen.rows(), screen.cols(), cv::CV_8UC1)
+            .expect("Failed to initialize matrix")
+    };
     // convert to greyscale
     imgproc::cvt_color(&screen, &mut grey, imgproc::COLOR_BGR2GRAY, 0).unwrap();
     // debug_show(&grey);
-    
     // Detect buffer size
     let buffer_size = detect_buffer_size(&grey).expect("Failed to detect buffer size");
     println!("Buffer size detected: {}", buffer_size);
@@ -49,9 +67,17 @@ pub fn scan(screen: &Mat) -> Result<(), String> {
 
     // Process cell data
     let grid_data = process_grid(&grey, &grid_info).expect("Failed to process grid data");
-    println!("Grid size detected: {}x{}", grid_info.rows, grid_info.cols);
+    let grid = PuzzleGrid {
+        rows: grid_info.rows,
+        cols: grid_info.cols,
+        cells: grid_data,
+    };
+    println!("Grid:\n{}", grid.to_string());
 
-    Ok(())
+    let daemons = Vec::new();
+    let puzzle = Puzzle { grid, daemons };
+
+    Ok(puzzle)
 }
 
 fn detect_buffer_size(grey: &Mat) -> Result<i32, String> {
@@ -67,41 +93,73 @@ fn detect_buffer_size(grey: &Mat) -> Result<i32, String> {
 
     // Match buffer template on thresholded image
     // Load match template
-    let buffer_template = imread("assets/images/buffer.png", ImreadModes::IMREAD_GRAYSCALE as i32).expect("File buffer.png not found");
+    let buffer_template = imread(
+        "assets/images/buffer.png",
+        ImreadModes::IMREAD_GRAYSCALE as i32,
+    )
+    .expect("File buffer.png not found");
     // Prepare threshold image
     let threshold = 70.0;
     let mut thr_buffer = Mat::default().unwrap();
-    imgproc::threshold(&buffer, &mut thr_buffer, threshold, 255.0, imgproc::THRESH_BINARY).unwrap();
+    imgproc::threshold(
+        &buffer,
+        &mut thr_buffer,
+        threshold,
+        255.0,
+        imgproc::THRESH_BINARY,
+    )
+    .unwrap();
 
     // Find matches, each pixel represents the template similarity from 0 (worst) to 1 (best)
     let mut match_result = Mat::default().unwrap();
     let mask = cv::no_array().unwrap();
-    imgproc::match_template(&thr_buffer, &buffer_template, &mut match_result, imgproc::TemplateMatchModes::TM_CCOEFF_NORMED as i32, &mask).unwrap();
-    
+    imgproc::match_template(
+        &thr_buffer,
+        &buffer_template,
+        &mut match_result,
+        imgproc::TemplateMatchModes::TM_CCOEFF_NORMED as i32,
+        &mask,
+    )
+    .unwrap();
     // Find maximum spots by threshold and count points above threshold
     let mut thr_match_result = Mat::default().unwrap();
-    imgproc::threshold(&match_result, &mut thr_match_result, 0.9, 255.0, imgproc::THRESH_BINARY).unwrap();
+    imgproc::threshold(
+        &match_result,
+        &mut thr_match_result,
+        0.9,
+        255.0,
+        imgproc::THRESH_BINARY,
+    )
+    .unwrap();
 
     let buffer_size = cv::count_non_zero(&thr_match_result).unwrap();
     Ok(buffer_size)
 }
 
-struct GridInfo {
-    left: i32,
-    top: i32,
-    width: i32,
-    height: i32,
+struct GridScanInfo {
+    // left: i32,
+    // top: i32,
+    // width: i32,
+    // height: i32,
     rows: i32,
     cols: i32,
-    cells: Vec<cv::Rect>
+    cells: Vec<cv::Rect>,
 }
 
 fn debug_contours(img: &Mat, rects: &Vec<cv::Rect>) {
-    let green_rgba = cv::Scalar::new(0.0, 255.0, 0.0,255.0);
+    let green_rgba = cv::Scalar::new(0.0, 255.0, 0.0, 255.0);
     let mut contours = Mat::default().unwrap();
     imgproc::cvt_color(&img, &mut contours, imgproc::COLOR_GRAY2RGBA, 0).unwrap();
     for rect in rects {
-        imgproc::rectangle(&mut contours, rect.to_owned(), green_rgba, 2, imgproc::FILLED, 0).unwrap();
+        imgproc::rectangle(
+            &mut contours,
+            rect.to_owned(),
+            green_rgba,
+            2,
+            imgproc::FILLED,
+            0,
+        )
+        .unwrap();
     }
     // Draw debug contours
     debug_show("contours", &contours);
@@ -111,7 +169,14 @@ fn get_contour_rects(img: &Mat) -> Vec<cv::Rect> {
     // Outscribe bounding box around masked cells
     let mut cell_contours = opencv::types::VectorOfVectorOfPoint::new();
     let offset = cv::Point::new(0, 0);
-    imgproc::find_contours(&img, &mut cell_contours, imgproc::RETR_LIST, imgproc::CHAIN_APPROX_SIMPLE, offset).unwrap();
+    imgproc::find_contours(
+        &img,
+        &mut cell_contours,
+        imgproc::RETR_LIST,
+        imgproc::CHAIN_APPROX_SIMPLE,
+        offset,
+    )
+    .unwrap();
 
     let mut rects = Vec::new();
     let rect_area_threshold = 25 * 25 * 5; // cell_w * cell_h * n_cell)
@@ -125,32 +190,53 @@ fn get_contour_rects(img: &Mat) -> Vec<cv::Rect> {
     rects
 }
 
-fn dilate_rect(grid_img: &Mat, ksize: cv::Size) -> Vec::<cv::Rect> {
-    let anchor = cv::Point::new(-1,-1);
+fn dilate_rect(grid_img: &Mat, ksize: cv::Size) -> Vec<cv::Rect> {
+    let anchor = cv::Point::new(-1, -1);
     let border_value = imgproc::morphology_default_border_value().unwrap();
     let kernel = imgproc::get_structuring_element(imgproc::MORPH_RECT, ksize, anchor).unwrap();
     let mut dilate = Mat::default().unwrap();
-    imgproc::dilate(&grid_img, &mut dilate, &kernel, anchor, 1, cv::BORDER_ISOLATED, border_value).unwrap();
+    imgproc::dilate(
+        &grid_img,
+        &mut dilate,
+        &kernel,
+        anchor,
+        1,
+        cv::BORDER_ISOLATED,
+        border_value,
+    )
+    .unwrap();
 
     let mut rects = get_contour_rects(&dilate);
     // transform coordinates from ROI to parent coordinates
     let mut size = cv::Size::new(0, 0);
     let mut offset = cv::Point::new(0, 0);
     grid_img.locate_roi(&mut size, &mut offset).unwrap();
-    rects.iter_mut().for_each(|rect| { rect.x += offset.x; rect.y += offset.y;});
+    rects.iter_mut().for_each(|rect| {
+        rect.x += offset.x;
+        rect.y += offset.y;
+    });
 
     rects
 }
 
-fn detect_grid(grey: &Mat) -> Result<GridInfo, String> {    
+fn detect_grid(grey: &Mat) -> Result<GridScanInfo, String> {
     // Blur grid then apply threshold to find cells
     let mut blur = Mat::default().unwrap();
-    let blur_kernel = cv::Size {width: 35, height: 29};
+    let blur_kernel = cv::Size {
+        width: 35,
+        height: 29,
+    };
     imgproc::gaussian_blur(&grey, &mut blur, blur_kernel, 0.0, 0.0, cv::BORDER_DEFAULT).unwrap();
     let mut thr_img = Mat::default().unwrap();
     let gaussian_threshold = 45; // TODO: config
-    imgproc::threshold(&blur, &mut thr_img, gaussian_threshold as f64, 255.0, imgproc::THRESH_BINARY).unwrap();
-    
+    imgproc::threshold(
+        &blur,
+        &mut thr_img,
+        gaussian_threshold as f64,
+        255.0,
+        imgproc::THRESH_BINARY,
+    )
+    .unwrap();
     // Extract ROI grid max limit area
     let grid_left = cfg_i32("grid.left");
     let grid_right = cfg_i32("grid.right");
@@ -175,7 +261,10 @@ fn detect_grid(grey: &Mat) -> Result<GridInfo, String> {
 
     // Adjust top and bottom grid rect if smaller. This avoids extranous data noise during column detection
     grid_roi.y = rows.first().map(|row| row.y).unwrap_or(grid_roi.y);
-    let new_grid_bottom_y = rows.last().map(|row| row.y + row.height).unwrap_or(grid_roi.y + grid_roi.height);
+    let new_grid_bottom_y = rows
+        .last()
+        .map(|row| row.y + row.height)
+        .unwrap_or(grid_roi.y + grid_roi.height);
     grid_roi.height = new_grid_bottom_y - grid_roi.y;
     grid_thr_img = Mat::roi(&thr_img, grid_roi).unwrap();
 
@@ -196,12 +285,11 @@ fn detect_grid(grey: &Mat) -> Result<GridInfo, String> {
             cells.push(cell_rect);
         }
     }
-    
-    let grid_info = GridInfo {
-        left: grid_left,
-        top: grid_top,
-        width: grid_width,
-        height: grid_height,
+    let grid_info = GridScanInfo {
+        // left: grid_left,
+        // top: grid_top,
+        // width: grid_width,
+        // height: grid_height,
         rows: rows.len() as i32,
         cols: cols.len() as i32,
         cells,
@@ -209,45 +297,81 @@ fn detect_grid(grey: &Mat) -> Result<GridInfo, String> {
     Ok(grid_info)
 }
 
-fn process_grid(grey: &Mat, grid_info: &GridInfo) -> Result<(), String> {
-    debug_contours(grey, &grid_info.cells);
+fn process_grid(grey: &Mat, grid_info: &GridScanInfo) -> Result<Vec<String>, String> {
+    // debug_contours(grey, &grid_info.cells);
 
-    Ok(())
+    let correction_map: HashMap<&str, &str> = [("BO", "BD")].iter().cloned().collect();
+
+    // Process grid cells
+    let cells_txt = grid_info
+        .cells
+        .iter()
+        .map(|cell| {
+            let roi = Mat::roi(grey, *cell).unwrap();
+            let mut text = match recognize_cell(&roi) {
+                Ok(text) => text,
+                Err(e) => return Err(e),
+            };
+            text = correction_map
+                .get(text.as_str())
+                .map_or(text, |text| (*text).to_owned());
+            Ok(text)
+        })
+        .collect::<Result<Vec<String>, _>>()
+        .expect("Failed to recognize some grid cells");
+
+    // Check for invalid codes
+    let valid_codes = cfg_str_vec("valid_codes");
+    let is_valid_code = |code: &String| valid_codes.contains(code);
+    if !cells_txt.iter().all(is_valid_code) {
+        return Err("An invalid code was recognized".to_string());
+    }
+
+    Ok(cells_txt)
 }
 
-
-
 // TESTS
-// cfg!("test");
+#[cfg(test)]
 static FILE_TEST_5: &str = "assets/images/test_5x5.jpg";
-// cfg!("test");
+#[cfg(test)]
 static FILE_TEST_6: &str = "assets/images/test_6x6.png";
 
 #[test]
-fn test_scan() {
-    let test_screen = imread(FILE_TEST_6, ImreadModes::IMREAD_UNCHANGED as i32).expect(format!("File {} not found", FILE_TEST_6).as_str());
-    scan(&test_screen).unwrap();
-}
-
-#[test]
 fn test_buffer() {
-    let test_screen = imread(FILE_TEST_6, ImreadModes::IMREAD_GRAYSCALE as i32).expect(format!("File {} not found", FILE_TEST_6).as_str());
+    let test_screen = imread(FILE_TEST_6, ImreadModes::IMREAD_GRAYSCALE as i32)
+        .expect(format!("File {} not found", FILE_TEST_6).as_str());
     let buffer_size = detect_buffer_size(&test_screen).unwrap();
     assert_eq!(buffer_size, 8);
 }
 
 #[test]
-fn test_grid_5() {
-    let test_screen = imread(FILE_TEST_5, ImreadModes::IMREAD_GRAYSCALE as i32).expect(format!("File {} not found", FILE_TEST_5).as_str());
+fn test_grid_detect_5() {
+    let test_screen = imread(FILE_TEST_5, ImreadModes::IMREAD_GRAYSCALE as i32)
+        .expect(format!("File {} not found", FILE_TEST_5).as_str());
     let grid_info = detect_grid(&test_screen).unwrap();
     assert_eq!(grid_info.rows, 5);
     assert_eq!(grid_info.cols, 5);
 }
 
 #[test]
-fn test_grid_6() {
-    let test_screen = imread(FILE_TEST_6, ImreadModes::IMREAD_GRAYSCALE as i32).expect(format!("File {} not found", FILE_TEST_6).as_str());
+fn test_grid_detect_6() {
+    let test_screen = imread(FILE_TEST_6, ImreadModes::IMREAD_GRAYSCALE as i32)
+        .expect(format!("File {} not found", FILE_TEST_6).as_str());
     let grid_info = detect_grid(&test_screen).unwrap();
     assert_eq!(grid_info.rows, 6);
     assert_eq!(grid_info.cols, 6);
+}
+
+#[test]
+fn test_scan_puzzle() {
+    let test_screen = imread(FILE_TEST_5, ImreadModes::IMREAD_UNCHANGED as i32)
+        .expect(format!("File {} not found", FILE_TEST_5).as_str());
+    let puzzle = scan(&test_screen).unwrap();
+    assert_eq!(puzzle.grid.cells, vec![
+        "55","55","1C","55","55",
+        "55","E9","BD","1C","BD",
+        "E9","1C","1C","1C","55",
+        "E9","1C","BD","1C","BD",
+        "55","55","BD","55","BD"
+    ]);
 }

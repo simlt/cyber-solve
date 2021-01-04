@@ -25,3 +25,7 @@ pub fn cfg_str(key: &str) -> &str {
     let settings = SETTINGS.read().unwrap();
     (*settings).get::<&str>(key).unwrap()
 }
+pub fn cfg_str_vec(key: &str) -> Vec<String> {
+    let settings = SETTINGS.read().unwrap();
+    (*settings).get_array(key).unwrap().into_iter().map(|val| val.to_string()).collect()
+}
