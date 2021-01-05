@@ -21,6 +21,14 @@ pub fn cfg_i32(key: &str) -> i32 {
     let settings = SETTINGS.read().unwrap();
     (*settings).get::<i32>(key).unwrap()
 }
+pub fn cfg_f32(key: &str) -> f32 {
+    let settings = SETTINGS.read().unwrap();
+    (*settings).get::<f32>(key).unwrap()
+}
+pub fn cfg_f64(key: &str) -> f64 {
+    let settings = SETTINGS.read().unwrap();
+    (*settings).get::<f64>(key).unwrap()
+}
 pub fn cfg_str(key: &str) -> &str {
     let settings = SETTINGS.read().unwrap();
     (*settings).get::<&str>(key).unwrap()

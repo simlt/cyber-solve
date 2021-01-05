@@ -300,7 +300,11 @@ fn detect_grid(grey: &Mat) -> Result<GridScanInfo, String> {
 fn process_grid(grey: &Mat, grid_info: &GridScanInfo) -> Result<Vec<String>, String> {
     // debug_contours(grey, &grid_info.cells);
 
-    let correction_map: HashMap<&str, &str> = [("BO", "BD")].iter().cloned().collect();
+    // Helper map to fix most common OCR mistakes
+    let correction_map: HashMap<&str, &str> = [
+        ("BO", "BD"),
+        ("C", "1C")
+    ].iter().cloned().collect();
 
     // Process grid cells
     let cells_txt = grid_info
@@ -323,8 +327,10 @@ fn process_grid(grey: &Mat, grid_info: &GridScanInfo) -> Result<Vec<String>, Str
     // Check for invalid codes
     let valid_codes = cfg_str_vec("valid_codes");
     let is_valid_code = |code: &String| valid_codes.contains(code);
-    if !cells_txt.iter().all(is_valid_code) {
-        return Err("An invalid code was recognized".to_string());
+    for code in &cells_txt {
+        if !is_valid_code(code) {
+            return Err(format!("An invalid code \"{}\" was recognized", code).to_string());
+        }
     }
 
     Ok(cells_txt)
@@ -363,7 +369,7 @@ fn test_grid_detect_6() {
 }
 
 #[test]
-fn test_scan_puzzle() {
+fn test_scan_puzzle_5() {
     let test_screen = imread(FILE_TEST_5, ImreadModes::IMREAD_UNCHANGED as i32)
         .expect(format!("File {} not found", FILE_TEST_5).as_str());
     let puzzle = scan(&test_screen).unwrap();
@@ -373,5 +379,20 @@ fn test_scan_puzzle() {
         "E9","1C","1C","1C","55",
         "E9","1C","BD","1C","BD",
         "55","55","BD","55","BD"
+    ]);
+}
+
+#[test]
+fn test_scan_puzzle_6() {
+    let test_screen = imread(FILE_TEST_6, ImreadModes::IMREAD_UNCHANGED as i32)
+        .expect(format!("File {} not found", FILE_TEST_6).as_str());
+    let puzzle = scan(&test_screen).unwrap();
+    assert_eq!(puzzle.grid.cells, vec![
+        "E9","1C","55","55","55","1C",
+        "55","55","55","7A","BD","BD",
+        "BD","E9","E9","55","BD","1C",
+        "1C","1C","7A","55","55","7A",
+        "7A","7A","55","55","1C","55",
+        "E9","E9","1C","BD","55","7A",
     ]);
 }

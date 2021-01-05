@@ -13,5 +13,9 @@
     "top": 355,
     "bottom": 715
   },
-  "valid_codes": ["1C", "55", "7A", "BD", "E9", "FF"]
+  "valid_codes": ["1C", "55", "7A", "BD", "E9", "FF"],
+  "ocr_refine": {
+    "height_border": 10,
+    "filter_threshold": 120
+  }
 }
