@@ -13,3 +13,4 @@ lazy_static = "1.4.0"
 leptess = "0.9.0"
 # Enable "clang-runtime" to avoid `libclang` shared library is not loaded on this thread
 opencv = { version = "0.47.0", features = ["clang-runtime"] }
+serde = {version = "1.0.118", features = ["derive"] }

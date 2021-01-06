@@ -13,9 +13,8 @@ fn init_leptess() -> LepTess {
 
 pub fn recognize_cell(cell: &Mat) -> Result<String, String> {
     // Tunable params
-    let threshold = cfg_f64("ocr_refine.filter_threshold"); // 110.0;
-    let height_border = cfg_i32("ocr_refine.height_border"); // 10;
-                                                             // let blur_size = cfg_i32("ocr_refine.blur_size");
+    let threshold = cfg_f64("opencv.ocr_filter_threshold"); // 110.0;
+    let height_border = cfg_i32("opencv.ocr_height_border"); // 10;
 
     // Refine cell image:  normalize() -> negate() -> threshold() -> extend()
 

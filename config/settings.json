@@ -6,6 +6,17 @@
     "top": 190,
     "bottom": 235
   },
+  "daemons": {
+    "max_length": 4,
+    "left": 834,
+    "cell_width": 43,
+    "rows": [
+      { "top": 340, "bottom": 375 },
+      { "top": 410, "bottom": 445 },
+      { "top": 480, "bottom": 515 },
+      { "top": 550, "bottom": 585 }
+    ]
+  },
   "grid": {
     "$comments": "Grid size also affects horizontal grid offset! 5x5, 6x6, etc...",
     "left": 305,
@@ -14,8 +25,10 @@
     "bottom": 715
   },
   "valid_codes": ["1C", "55", "7A", "BD", "E9", "FF"],
-  "ocr_refine": {
-    "height_border": 10,
-    "filter_threshold": 120
+  "opencv": {
+    "detect_grid_threshold": 45,
+    "detect_daemon_threshold": 40,
+    "ocr_height_border": 10,
+    "ocr_filter_threshold": 120
   }
 }

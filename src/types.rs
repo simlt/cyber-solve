@@ -26,7 +26,7 @@ impl std::fmt::Display for PuzzleGrid {
     }
 }
 
-pub struct PuzzleDaemon {}
+pub type PuzzleDaemon = Vec<String>;
 
 pub struct Puzzle {
     pub grid: PuzzleGrid,

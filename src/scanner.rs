@@ -8,7 +8,7 @@ use opencv::prelude::*;
 use dxgcap::DXGIManager;
 use std::{collections::HashMap, ffi::c_void};
 
-use crate::configuration::{cfg_i32, cfg_str_vec};
+use crate::configuration::{Daemon, cfg_get, cfg_i32, cfg_str_vec};
 use crate::ocr::recognize_cell;
 use crate::types::*;
 
@@ -74,9 +74,10 @@ pub fn scan(screen: &Mat) -> Result<Puzzle, String> {
     };
     println!("Grid:\n{}", grid.to_string());
 
-    let daemons = Vec::new();
-    let puzzle = Puzzle { grid, daemons };
+    // Detect and process daemons
+    let daemons = scan_daemons(&grey).expect("Failed to process daemon data");
 
+    let puzzle = Puzzle { grid, daemons };
     Ok(puzzle)
 }
 
@@ -136,11 +137,7 @@ fn detect_buffer_size(grey: &Mat) -> Result<i32, String> {
     Ok(buffer_size)
 }
 
-struct GridScanInfo {
-    // left: i32,
-    // top: i32,
-    // width: i32,
-    // height: i32,
+struct CellScanInfo {
     rows: i32,
     cols: i32,
     cells: Vec<cv::Rect>,
@@ -165,7 +162,7 @@ fn debug_contours(img: &Mat, rects: &Vec<cv::Rect>) {
     debug_show("contours", &contours);
 }
 
-fn get_contour_rects(img: &Mat) -> Vec<cv::Rect> {
+fn get_contour_rects(img: &Mat, area_threshold: i32) -> Vec<cv::Rect> {
     // Outscribe bounding box around masked cells
     let mut cell_contours = opencv::types::VectorOfVectorOfPoint::new();
     let offset = cv::Point::new(0, 0);
@@ -179,10 +176,9 @@ fn get_contour_rects(img: &Mat) -> Vec<cv::Rect> {
     .unwrap();
 
     let mut rects = Vec::new();
-    let rect_area_threshold = 25 * 25 * 5; // cell_w * cell_h * n_cell)
     for countour in &cell_contours {
         let rect = imgproc::bounding_rect(&countour).unwrap();
-        if rect.area() > rect_area_threshold {
+        if rect.area() > area_threshold {
             rects.push(rect);
         }
     }
@@ -190,7 +186,7 @@ fn get_contour_rects(img: &Mat) -> Vec<cv::Rect> {
     rects
 }
 
-fn dilate_rect(grid_img: &Mat, ksize: cv::Size) -> Vec<cv::Rect> {
+fn dilate_rect(grid_img: &Mat, ksize: cv::Size, area_threshold: i32) -> Vec<cv::Rect> {
     let anchor = cv::Point::new(-1, -1);
     let border_value = imgproc::morphology_default_border_value().unwrap();
     let kernel = imgproc::get_structuring_element(imgproc::MORPH_RECT, ksize, anchor).unwrap();
@@ -206,7 +202,7 @@ fn dilate_rect(grid_img: &Mat, ksize: cv::Size) -> Vec<cv::Rect> {
     )
     .unwrap();
 
-    let mut rects = get_contour_rects(&dilate);
+    let mut rects = get_contour_rects(&dilate, area_threshold);
     // transform coordinates from ROI to parent coordinates
     let mut size = cv::Size::new(0, 0);
     let mut offset = cv::Point::new(0, 0);
@@ -219,7 +215,7 @@ fn dilate_rect(grid_img: &Mat, ksize: cv::Size) -> Vec<cv::Rect> {
     rects
 }
 
-fn detect_grid(grey: &Mat) -> Result<GridScanInfo, String> {
+fn detect_grid(grey: &Mat) -> Result<CellScanInfo, String> {
     // Blur grid then apply threshold to find cells
     let mut blur = Mat::default().unwrap();
     let blur_kernel = cv::Size {
@@ -228,7 +224,7 @@ fn detect_grid(grey: &Mat) -> Result<GridScanInfo, String> {
     };
     imgproc::gaussian_blur(&grey, &mut blur, blur_kernel, 0.0, 0.0, cv::BORDER_DEFAULT).unwrap();
     let mut thr_img = Mat::default().unwrap();
-    let gaussian_threshold = 45; // TODO: config
+    let gaussian_threshold = cfg_i32("opencv.detect_grid_threshold");
     imgproc::threshold(
         &blur,
         &mut thr_img,
@@ -237,6 +233,7 @@ fn detect_grid(grey: &Mat) -> Result<GridScanInfo, String> {
         imgproc::THRESH_BINARY,
     )
     .unwrap();
+
     // Extract ROI grid max limit area
     let grid_left = cfg_i32("grid.left");
     let grid_right = cfg_i32("grid.right");
@@ -244,34 +241,37 @@ fn detect_grid(grey: &Mat) -> Result<GridScanInfo, String> {
     let grid_bottom = cfg_i32("grid.bottom");
     let grid_width = grid_right - grid_left;
     let grid_height = grid_bottom - grid_top;
-    let mut grid_roi = cv::Rect::new(grid_left, grid_top, grid_width, grid_height);
-    let mut grid_thr_img = Mat::roi(&thr_img, grid_roi).unwrap();
+    let cell_min_area = 25 * 25;
+    let min_size = cv::Size::new(5, 5);
 
-    // let mut masked = Mat::default().unwrap();
-    // cv::bitwise_and(&grey, &thr, &mut masked, &cv::no_array().unwrap()).unwrap();
-    // debug_show("masked", &masked);
+    let mut roi = cv::Rect::new(grid_left, grid_top, grid_width, grid_height);
+    let mut grid_thr_img = Mat::roi(&thr_img, roi).unwrap();
+    // let debug_roi_img = Mat::roi(&grey, roi).unwrap();
+    // debug_show("roi_img", &debug_roi_img);
 
     // Dilate horizontally to detect rows
     let dilate_row = 50;
     let kernel_h = cv::Size::new(dilate_row, 1);
-    let mut rows = dilate_rect(&grid_thr_img, kernel_h);
+    let row_area_threshold= cell_min_area * min_size.width;
+    let mut rows = dilate_rect(&grid_thr_img, kernel_h, row_area_threshold);
     // sort rows by y coordinate
     rows.sort_by_key(|row| row.y);
     // debug_contours(&grey, &rows);
 
     // Adjust top and bottom grid rect if smaller. This avoids extranous data noise during column detection
-    grid_roi.y = rows.first().map(|row| row.y).unwrap_or(grid_roi.y);
+    roi.y = rows.first().map(|row| row.y).unwrap_or(roi.y);
     let new_grid_bottom_y = rows
         .last()
         .map(|row| row.y + row.height)
-        .unwrap_or(grid_roi.y + grid_roi.height);
-    grid_roi.height = new_grid_bottom_y - grid_roi.y;
-    grid_thr_img = Mat::roi(&thr_img, grid_roi).unwrap();
+    .unwrap_or(roi.y + roi.height);
+    roi.height = new_grid_bottom_y - roi.y;
+    grid_thr_img = Mat::roi(&thr_img, roi).unwrap();
 
     // Dilate vertically to detect cols
     let dilate_col = 50;
     let kernel_v = cv::Size::new(1, dilate_col);
-    let mut cols = dilate_rect(&grid_thr_img, kernel_v);
+    let col_area_threshold= cell_min_area * min_size.height;
+    let mut cols = dilate_rect(&grid_thr_img, kernel_v, col_area_threshold);
     // Sort cols by x thr_img coordinate
     cols.sort_by_key(|col| col.x);
     // debug_contours(&grey, &cols);
@@ -285,11 +285,7 @@ fn detect_grid(grey: &Mat) -> Result<GridScanInfo, String> {
             cells.push(cell_rect);
         }
     }
-    let grid_info = GridScanInfo {
-        // left: grid_left,
-        // top: grid_top,
-        // width: grid_width,
-        // height: grid_height,
+    let grid_info = CellScanInfo {
         rows: rows.len() as i32,
         cols: cols.len() as i32,
         cells,
@@ -297,50 +293,107 @@ fn detect_grid(grey: &Mat) -> Result<GridScanInfo, String> {
     Ok(grid_info)
 }
 
-fn process_grid(grey: &Mat, grid_info: &GridScanInfo) -> Result<Vec<String>, String> {
+fn detect_daemon_size(grey: &Mat, roi: &cv::Rect) -> Result<CellScanInfo, String> {
+    // Blur grid then apply threshold to find cells
+    let gaussian_threshold = cfg_i32("opencv.detect_daemon_threshold");
+    let mut blur = Mat::default().unwrap();
+    let blur_kernel = cv::Size {
+        width: 35,
+        height: 29,
+    };
+    imgproc::gaussian_blur(&grey, &mut blur, blur_kernel, 0.0, 0.0, cv::BORDER_DEFAULT).unwrap();
+    let mut thr_img = Mat::default().unwrap();
+    imgproc::threshold(
+        &blur,
+        &mut thr_img,
+        gaussian_threshold as f64,
+        255.0,
+        imgproc::THRESH_BINARY,
+    )
+    .unwrap();
+
+    // Get daemon region of interest
+    let grid_thr_img = Mat::roi(&thr_img, *roi).unwrap();
+
+    // Dilate vertically to detect cols
+    let dilate_col = 50;
+    let kernel_v = cv::Size::new(1, dilate_col);
+    let cell_min_area = 20 * 20;
+    let mut cols = dilate_rect(&grid_thr_img, kernel_v, cell_min_area);
+    // Sort cols by x thr_img coordinate
+    cols.sort_by_key(|col| col.x);
+    // debug_contours(&grey, &cols);
+
+    // Map rows and cols to cells rectangles
+    let cells = cols.iter().map(|col|  cv::Rect::new(col.x, roi.y, col.width, roi.height)).collect();
+    let grid_info = CellScanInfo {
+        rows: 1,
+        cols: cols.len() as i32,
+        cells,
+    };
+    Ok(grid_info)
+}
+
+fn scan_daemons(img: &Mat) -> Result<Vec<PuzzleDaemon>, String>{
+    let daemon_cfg: Daemon = cfg_get("daemons");
+    let rows = daemon_cfg.rows;
+    let cell_width = daemon_cfg.cell_width;
+    let max_length = daemon_cfg.max_length;
+    let max_width = cell_width * max_length;
+
+    let mut daemons = Vec::<PuzzleDaemon>::new();
+    for row in &rows {
+        let height = row.bottom - row.top;
+        let daemon_roi = cv::Rect::new(daemon_cfg.left, row.top, max_width, height);
+        let cell_info = detect_daemon_size(img, &daemon_roi).unwrap();
+        println!("Daemon size detected: {}", cell_info.cols);
+        if cell_info.cols > 0 {
+            // Extract sequence cells
+            let cells_txt_result: Result<Vec<String>, String> = cell_info.cells.iter().map(|cell| extract_cell(&img, &cell)).collect();
+            let daemon = cells_txt_result.unwrap();
+            daemons.push(daemon);
+        }
+    }
+    Ok(daemons)
+}
+
+fn process_grid(grey: &Mat, grid_info: &CellScanInfo) -> Result<Vec<String>, String> {
     // debug_contours(grey, &grid_info.cells);
 
+    let cells_txt: Result<Vec<String>, String> = grid_info.cells.iter().map(|cell| extract_cell(&grey, &cell)).collect();
+    cells_txt
+}
+
+fn extract_cell(img: &Mat, cell: &cv::Rect) -> Result<String, String> {
     // Helper map to fix most common OCR mistakes
     let correction_map: HashMap<&str, &str> = [
         ("BO", "BD"),
-        ("C", "1C")
+        ("C", "1C"),
+        ("TA", "7A")
     ].iter().cloned().collect();
+    let valid_codes = cfg_str_vec("valid_codes");
 
-    // Process grid cells
-    let cells_txt = grid_info
-        .cells
-        .iter()
-        .map(|cell| {
-            let roi = Mat::roi(grey, *cell).unwrap();
-            let mut text = match recognize_cell(&roi) {
-                Ok(text) => text,
-                Err(e) => return Err(e),
-            };
+    let roi = Mat::roi(img, *cell).unwrap();
+    let mut text = recognize_cell(&roi).expect("Failed to recognize grid cell");
             text = correction_map
                 .get(text.as_str())
                 .map_or(text, |text| (*text).to_owned());
-            Ok(text)
-        })
-        .collect::<Result<Vec<String>, _>>()
-        .expect("Failed to recognize some grid cells");
 
-    // Check for invalid codes
-    let valid_codes = cfg_str_vec("valid_codes");
-    let is_valid_code = |code: &String| valid_codes.contains(code);
-    for code in &cells_txt {
-        if !is_valid_code(code) {
-            return Err(format!("An invalid code \"{}\" was recognized", code).to_string());
+    // Check for invalid code
+    if !valid_codes.contains(&text) {
+        return Err(format!("An invalid code \"{}\" was recognized", text).to_string());
         }
+    Ok(text)
     }
 
-    Ok(cells_txt)
-}
 
 // TESTS
 #[cfg(test)]
 static FILE_TEST_5: &str = "assets/images/test_5x5.jpg";
 #[cfg(test)]
 static FILE_TEST_6: &str = "assets/images/test_6x6.png";
+#[cfg(test)]
+static FILE_TEST_4_DAEMONS: &str = "assets/images/test_4-daemons.jpg";
 
 #[test]
 fn test_buffer() {
@@ -394,5 +447,18 @@ fn test_scan_puzzle_6() {
         "1C","1C","7A","55","55","7A",
         "7A","7A","55","55","1C","55",
         "E9","E9","1C","BD","55","7A",
+    ]);
+}
+
+#[test]
+fn test_scan_daemons() {
+    let test_screen = imread(FILE_TEST_4_DAEMONS, ImreadModes::IMREAD_GRAYSCALE as i32)
+        .expect(format!("File {} not found", FILE_TEST_4_DAEMONS).as_str());
+    let daemons = scan_daemons(&test_screen).unwrap();
+    assert_eq!(daemons, vec![
+        vec!["E9", "55"],
+        vec!["55", "BD", "E9"],
+        vec!["FF", "1C", "BD", "E9"],
+        vec!["55", "1C", "FF", "55"]
     ]);
 }
