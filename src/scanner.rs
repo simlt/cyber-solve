@@ -8,7 +8,7 @@ use opencv::prelude::*;
 use dxgcap::DXGIManager;
 use std::{collections::HashMap, ffi::c_void};
 
-use crate::configuration::{Daemon, cfg_get, cfg_i32, cfg_str_vec};
+use crate::configuration::{DaemonCfg, cfg_get, cfg_i32, cfg_str_vec};
 use crate::ocr::recognize_cell;
 use crate::types::*;
 
@@ -44,12 +44,18 @@ pub fn screenshot() -> Result<Mat, String> {
     Ok(mat)
 }
 
-pub fn capture_and_scan() -> Result<(), String> {
-    let screen: cv::Mat = screenshot().expect("Failed to capture screenshot");
-    scan(&screen)
+pub fn capture_and_scan() -> Result<Puzzle, String> {
+    // let screen: cv::Mat = screenshot().expect("Failed to capture screenshot"); // FIXME:
+    let screen = imread(
+        "assets/images/test_6x6.png",
+        ImreadModes::IMREAD_UNCHANGED as i32,
+    )
+    .expect("File test_6x6.png not found");
+    let result = scan(&screen);
+    result
 }
 
-pub fn scan(screen: &Mat) -> Result<Puzzle, String> {
+pub fn scan<'screen, 'puzzle>(screen: &'screen Mat) -> Result<Puzzle, String> {
     let mut grey = unsafe {
         Mat::new_rows_cols(screen.rows(), screen.cols(), cv::CV_8UC1)
             .expect("Failed to initialize matrix")
@@ -243,7 +249,7 @@ fn detect_grid(grey: &Mat) -> Result<CellScanInfo, String> {
     let grid_height = grid_bottom - grid_top;
     let cell_min_area = 25 * 25;
     let min_size = cv::Size::new(5, 5);
-
+    
     let mut roi = cv::Rect::new(grid_left, grid_top, grid_width, grid_height);
     let mut grid_thr_img = Mat::roi(&thr_img, roi).unwrap();
     // let debug_roi_img = Mat::roi(&grey, roi).unwrap();
@@ -261,8 +267,8 @@ fn detect_grid(grey: &Mat) -> Result<CellScanInfo, String> {
     // Adjust top and bottom grid rect if smaller. This avoids extranous data noise during column detection
     roi.y = rows.first().map(|row| row.y).unwrap_or(roi.y);
     let new_grid_bottom_y = rows
-        .last()
-        .map(|row| row.y + row.height)
+    .last()
+    .map(|row| row.y + row.height)
     .unwrap_or(roi.y + roi.height);
     roi.height = new_grid_bottom_y - roi.y;
     grid_thr_img = Mat::roi(&thr_img, roi).unwrap();
@@ -335,7 +341,7 @@ fn detect_daemon_size(grey: &Mat, roi: &cv::Rect) -> Result<CellScanInfo, String
 }
 
 fn scan_daemons(img: &Mat) -> Result<Vec<PuzzleDaemon>, String>{
-    let daemon_cfg: Daemon = cfg_get("daemons");
+    let daemon_cfg: DaemonCfg = cfg_get("daemons");
     let rows = daemon_cfg.rows;
     let cell_width = daemon_cfg.cell_width;
     let max_length = daemon_cfg.max_length;
@@ -349,8 +355,8 @@ fn scan_daemons(img: &Mat) -> Result<Vec<PuzzleDaemon>, String>{
         println!("Daemon size detected: {}", cell_info.cols);
         if cell_info.cols > 0 {
             // Extract sequence cells
-            let cells_txt_result: Result<Vec<String>, String> = cell_info.cells.iter().map(|cell| extract_cell(&img, &cell)).collect();
-            let daemon = cells_txt_result.unwrap();
+            let daemon: PuzzleDaemon = cell_info.cells.iter().map(|cell| extract_cell(&img, &cell).unwrap()).collect();
+            // let daemon = cells_txt_result.unwrap();
             daemons.push(daemon);
         }
     }
@@ -375,90 +381,92 @@ fn extract_cell(img: &Mat, cell: &cv::Rect) -> Result<String, String> {
 
     let roi = Mat::roi(img, *cell).unwrap();
     let mut text = recognize_cell(&roi).expect("Failed to recognize grid cell");
-            text = correction_map
-                .get(text.as_str())
-                .map_or(text, |text| (*text).to_owned());
+    text = correction_map
+        .get(text.as_str())
+        .map_or(text, |text| (*text).to_owned());
 
     // Check for invalid code
     if !valid_codes.contains(&text) {
         return Err(format!("An invalid code \"{}\" was recognized", text).to_string());
-        }
-    Ok(text)
     }
+    Ok(text)
+}
 
 
 // TESTS
 #[cfg(test)]
-static FILE_TEST_5: &str = "assets/images/test_5x5.jpg";
-#[cfg(test)]
-static FILE_TEST_6: &str = "assets/images/test_6x6.png";
-#[cfg(test)]
-static FILE_TEST_4_DAEMONS: &str = "assets/images/test_4-daemons.jpg";
+mod tests {
+    use super::*;
 
-#[test]
-fn test_buffer() {
-    let test_screen = imread(FILE_TEST_6, ImreadModes::IMREAD_GRAYSCALE as i32)
-        .expect(format!("File {} not found", FILE_TEST_6).as_str());
-    let buffer_size = detect_buffer_size(&test_screen).unwrap();
-    assert_eq!(buffer_size, 8);
-}
+    static FILE_TEST_5: &str = "assets/images/test_5x5.jpg";
+    static FILE_TEST_6: &str = "assets/images/test_6x6.png";
+    static FILE_TEST_4_DAEMONS: &str = "assets/images/test_4-daemons.jpg";
 
-#[test]
-fn test_grid_detect_5() {
-    let test_screen = imread(FILE_TEST_5, ImreadModes::IMREAD_GRAYSCALE as i32)
-        .expect(format!("File {} not found", FILE_TEST_5).as_str());
-    let grid_info = detect_grid(&test_screen).unwrap();
-    assert_eq!(grid_info.rows, 5);
-    assert_eq!(grid_info.cols, 5);
-}
+    #[test]
+    fn test_buffer() {
+        let test_screen = imread(FILE_TEST_6, ImreadModes::IMREAD_GRAYSCALE as i32)
+            .expect(format!("File {} not found", FILE_TEST_6).as_str());
+        let buffer_size = detect_buffer_size(&test_screen).unwrap();
+        assert_eq!(buffer_size, 8);
+    }
 
-#[test]
-fn test_grid_detect_6() {
-    let test_screen = imread(FILE_TEST_6, ImreadModes::IMREAD_GRAYSCALE as i32)
-        .expect(format!("File {} not found", FILE_TEST_6).as_str());
-    let grid_info = detect_grid(&test_screen).unwrap();
-    assert_eq!(grid_info.rows, 6);
-    assert_eq!(grid_info.cols, 6);
-}
+    #[test]
+    fn test_grid_detect_5() {
+        let test_screen = imread(FILE_TEST_5, ImreadModes::IMREAD_GRAYSCALE as i32)
+            .expect(format!("File {} not found", FILE_TEST_5).as_str());
+        let grid_info = detect_grid(&test_screen).unwrap();
+        assert_eq!(grid_info.rows, 5);
+        assert_eq!(grid_info.cols, 5);
+    }
 
-#[test]
-fn test_scan_puzzle_5() {
-    let test_screen = imread(FILE_TEST_5, ImreadModes::IMREAD_UNCHANGED as i32)
-        .expect(format!("File {} not found", FILE_TEST_5).as_str());
-    let puzzle = scan(&test_screen).unwrap();
-    assert_eq!(puzzle.grid.cells, vec![
-        "55","55","1C","55","55",
-        "55","E9","BD","1C","BD",
-        "E9","1C","1C","1C","55",
-        "E9","1C","BD","1C","BD",
-        "55","55","BD","55","BD"
-    ]);
-}
+    #[test]
+    fn test_grid_detect_6() {
+        let test_screen = imread(FILE_TEST_6, ImreadModes::IMREAD_GRAYSCALE as i32)
+            .expect(format!("File {} not found", FILE_TEST_6).as_str());
+        let grid_info = detect_grid(&test_screen).unwrap();
+        assert_eq!(grid_info.rows, 6);
+        assert_eq!(grid_info.cols, 6);
+    }
 
-#[test]
-fn test_scan_puzzle_6() {
-    let test_screen = imread(FILE_TEST_6, ImreadModes::IMREAD_UNCHANGED as i32)
-        .expect(format!("File {} not found", FILE_TEST_6).as_str());
-    let puzzle = scan(&test_screen).unwrap();
-    assert_eq!(puzzle.grid.cells, vec![
-        "E9","1C","55","55","55","1C",
-        "55","55","55","7A","BD","BD",
-        "BD","E9","E9","55","BD","1C",
-        "1C","1C","7A","55","55","7A",
-        "7A","7A","55","55","1C","55",
-        "E9","E9","1C","BD","55","7A",
-    ]);
-}
+    #[test]
+    fn test_scan_puzzle_5() {
+        let test_screen = imread(FILE_TEST_5, ImreadModes::IMREAD_UNCHANGED as i32)
+            .expect(format!("File {} not found", FILE_TEST_5).as_str());
+        let puzzle = scan(&test_screen).unwrap();
+        assert_eq!(puzzle.grid.cells, vec![
+            "55","55","1C","55","55",
+            "55","E9","BD","1C","BD",
+            "E9","1C","1C","1C","55",
+            "E9","1C","BD","1C","BD",
+            "55","55","BD","55","BD"
+        ]);
+    }
 
-#[test]
-fn test_scan_daemons() {
-    let test_screen = imread(FILE_TEST_4_DAEMONS, ImreadModes::IMREAD_GRAYSCALE as i32)
-        .expect(format!("File {} not found", FILE_TEST_4_DAEMONS).as_str());
-    let daemons = scan_daemons(&test_screen).unwrap();
-    assert_eq!(daemons, vec![
-        vec!["E9", "55"],
-        vec!["55", "BD", "E9"],
-        vec!["FF", "1C", "BD", "E9"],
-        vec!["55", "1C", "FF", "55"]
-    ]);
+    #[test]
+    fn test_scan_puzzle_6() {
+        let test_screen = imread(FILE_TEST_6, ImreadModes::IMREAD_UNCHANGED as i32)
+            .expect(format!("File {} not found", FILE_TEST_6).as_str());
+        let puzzle = scan(&test_screen).unwrap();
+        assert_eq!(puzzle.grid.cells, vec![
+            "E9","1C","55","55","55","1C",
+            "55","55","55","7A","BD","BD",
+            "BD","E9","E9","55","BD","1C",
+            "1C","1C","7A","55","55","7A",
+            "7A","7A","55","55","1C","55",
+            "E9","E9","1C","BD","55","7A",
+        ]);
+    }
+
+    #[test]
+    fn test_scan_daemons() {
+        let test_screen = imread(FILE_TEST_4_DAEMONS, ImreadModes::IMREAD_GRAYSCALE as i32)
+            .expect(format!("File {} not found", FILE_TEST_4_DAEMONS).as_str());
+        let daemons = scan_daemons(&test_screen).unwrap();
+        assert_eq!(daemons, vec![
+            vec!["E9", "55"],
+            vec!["55", "BD", "E9"],
+            vec!["FF", "1C", "BD", "E9"],
+            vec!["55", "1C", "FF", "55"]
+        ]);
+    }
 }

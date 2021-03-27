@@ -4,7 +4,7 @@ use std::sync::RwLock;
 use serde::Deserialize;
 
 #[derive(Debug, Deserialize)]
-pub(crate) struct Daemon {
+pub(crate) struct DaemonCfg {
     pub max_length: i32,
     pub left: i32,
     pub cell_width: i32,
