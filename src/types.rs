@@ -63,6 +63,7 @@ pub fn to_string_vector(v: Vec<&str>) -> Vec<String> {
 }
 
 pub struct Puzzle {
+    pub buffer_size: u8,
     pub grid: PuzzleGrid,
     pub daemons: Vec<PuzzleDaemon>,
 }
