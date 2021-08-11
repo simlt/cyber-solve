@@ -12,5 +12,5 @@ dxgcap = "0.2.4"
 lazy_static = "1.4.0"
 leptess = "0.13.0"
 # Enable "clang-runtime" to avoid `libclang` shared library is not loaded on this thread
-opencv = { version = "0.53.0", features = ["clang-runtime"] }
-serde = {version = "1.0.118", features = ["derive"] }
+opencv = { version = "0.53.1", features = ["clang-runtime"] }
+serde = { version = "1.0.127", features = ["derive"] }
