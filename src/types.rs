@@ -1,11 +1,23 @@
 pub struct PuzzleGrid {
-    pub rows: i32,
-    pub cols: i32,
+    pub rows: u32,
+    pub cols: u32,
     pub cells: Vec<String>,
 }
 
+pub enum PuzzleMoveType {
+    SelectRow,
+    SelectColumn,
+}
+
+#[derive(Copy, Clone)]
+pub enum PuzzleMove {
+    None,
+    Row(u32),
+    Column(u32),
+}
+
 impl PuzzleGrid {
-    pub fn new(rows: i32, cols: i32, cells: Vec<&str>) -> PuzzleGrid {
+    pub fn new(rows: u32, cols: u32, cells: Vec<&str>) -> PuzzleGrid {
         PuzzleGrid {
             rows,
             cols,
@@ -13,11 +25,11 @@ impl PuzzleGrid {
         }
     }
 
-    pub fn row(&self, index: i32) -> Vec<&str> {
+    pub fn row(&self, index: u32) -> Vec<&str> {
         return self.cells[(index * self.cols) as usize..((index + 1) * self.cols) as usize].iter().map(String::as_str).collect();
     }
 
-    pub fn col(&self, index: i32) -> Vec<&str> {
+    pub fn col(&self, index: u32) -> Vec<&str> {
         let mut col = Vec::new();
         for cell in self.cells.iter().skip(index as usize).step_by(self.cols as usize) {
             col.push(cell.as_str());
@@ -25,11 +37,11 @@ impl PuzzleGrid {
         return col;
     }
 
-    pub fn get_cell(&self, row: i32, col: i32) -> String {
-        return self.cells[(col + row * self.cols) as usize].to_owned();
+    pub fn get_cell(&self, row: u32, col: u32) -> &String {
+        return &self.cells[(col + row * self.cols) as usize];
     }
 
-    pub fn set_cell(&mut self, row: i32, col: i32, value: &str) {
+    pub fn set_cell(&mut self, row: u32, col: u32, value: &str) {
         self.cells[(col + row * self.cols) as usize] = value.to_string();
     }
 }
@@ -63,7 +75,7 @@ pub fn to_string_vector(v: Vec<&str>) -> Vec<String> {
 }
 
 pub struct Puzzle {
-    pub buffer_size: u8,
+    pub buffer_size: usize,
     pub grid: PuzzleGrid,
     pub daemons: Vec<PuzzleDaemon>,
 }
