@@ -7,10 +7,10 @@ edition = "2018"
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
 
 [dependencies]
-config = "0.10.1"
+config = "0.11.0"
 dxgcap = "0.2.4"
 lazy_static = "1.4.0"
-leptess = "0.9.0"
+leptess = "0.13.0"
 # Enable "clang-runtime" to avoid `libclang` shared library is not loaded on this thread
-opencv = { version = "0.47.0", features = ["clang-runtime"] }
+opencv = { version = "0.53.0", features = ["clang-runtime"] }
 serde = {version = "1.0.118", features = ["derive"] }
