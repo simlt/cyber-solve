@@ -70,12 +70,9 @@ impl std::fmt::Display for PuzzleGrid {
 
 pub type PuzzleDaemon = Vec<String>;
 
-pub fn to_string_vector(v: Vec<&str>) -> Vec<String> {
-    v.iter().map(|s| s.to_string()).collect()
-}
 
 pub struct Puzzle {
-    pub buffer_size: usize,
+    pub buffer_size: u32,
     pub grid: PuzzleGrid,
     pub daemons: Vec<PuzzleDaemon>,
 }

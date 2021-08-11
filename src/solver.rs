@@ -1,4 +1,4 @@
-use std::collections::HashMap;
+use std::{collections::HashMap, convert::TryInto};
 
 use crate::types::*;
 
@@ -19,10 +19,10 @@ enum DaemonMatchState {
 struct SolutionState {
     /// Vector with current Buffer state
     buffer: Vec<String>,
-    /// Vector with current row-col step state
+    /// Vector with current sequence of puzzle moves
     moves: Vec<PuzzleMove>,
     /// Move count for current step state
-    move_count: usize,
+    move_count: u32,
     /// Vector of daemon match length, where n-th element is the n-th daemon match length.
     /// The match value can go from 0 (no matches yet) to daemon[n].len() (daemon match completed)
     daemons: Vec<DaemonMatchState>,
@@ -36,8 +36,8 @@ impl SolutionState {
     /// Create a new initial solution state for a puzzle
     fn new(puzzle: &Puzzle) -> SolutionState {
         Self {
-            buffer: vec!["".to_string(); puzzle.buffer_size.into()],
-            moves: vec![PuzzleMove::None; puzzle.buffer_size.into()],
+            buffer: vec!["".to_string(); puzzle.buffer_size.try_into().unwrap()],
+            moves: vec![PuzzleMove::None; puzzle.buffer_size.try_into().unwrap()],
             move_count: 0,
             daemons: vec![DaemonMatchState::Partial(0); puzzle.daemons.len()],
             next_move_type: PuzzleMoveType::SelectColumn,
@@ -55,7 +55,7 @@ impl<'a> BreachSolver<'a> {
         BreachSolver { puzzle }
     }
     pub(crate) fn solve(&self) -> Option<Vec<u32>> {
-        let state = SolutionState::new(&self.puzzle);
+        let mut state = SolutionState::new(&self.puzzle);
         let solutions = self.step(&mut state, false);
         /*
         let solutions = this.step(this.puzzle.grid, daemonStatus, buffer, 0, true);
@@ -68,13 +68,15 @@ impl<'a> BreachSolver<'a> {
     }
 
     fn step(&self, state: &mut SolutionState, first_only: bool) -> Vec<Vec<PuzzleMove>> {
+        // Current buffer/move index on which we are iterating in current search step
+        let current_move_index : usize = state.move_count.try_into().unwrap();
         let mut solutions: Vec<Vec<PuzzleMove>> = Vec::new();
 
-        // Get last move from state, handle implicit  first move = Row(0) when state has no moves yet
-        let last_move = if state.move_count == 0 {
+        // Get last move from state, handle implicit first move = Row(0) when state has no moves yet
+        let last_move = if current_move_index == 0 {
             PuzzleMove::Row(0)
         } else {
-            state.moves[state.move_count - 1]
+            state.moves[current_move_index - 1]
         };
 
         // Search available moves on unused and valid cells
@@ -129,15 +131,15 @@ impl<'a> BreachSolver<'a> {
             }            
 
             // Update cell usage
-            state.moves[state.move_count - 1] = new_move;
-            state.buffer[state.move_count - 1] = *cell_ref;
-            state.used_cells[&(row, col)] = true;
+            state.moves[current_move_index] = new_move;
+            state.buffer[current_move_index] = cell_ref.to_string();
+            state.used_cells.insert((row, col), true);
 
             // Check all daemons for completion
             let all_daemons_completed = state.daemons.iter().all(|daemon| matches!(daemon, DaemonMatchState::Completed));
             if all_daemons_completed {
                 // Push valid solution
-                solutions.push(state.moves);
+                solutions.push(state.moves.clone());
                 if first_only {
                     // Stop searching for more solutions on first result
                     break;
@@ -145,13 +147,13 @@ impl<'a> BreachSolver<'a> {
             } else {
                 if state.move_count < self.puzzle.buffer_size {
                     // Only if we can still move, recurse in depth with next move
-                    let rec_solutions = self.step(state, first_only);
+                    let mut rec_solutions = self.step(state, first_only);
                     solutions.append(&mut rec_solutions);
                 }
             }
 
             // Reset used_cell before cycling on next cell
-            state.used_cells[&(row, col)] = false;
+            state.used_cells.insert((row, col), false);
         }
 
         solutions
@@ -161,6 +163,10 @@ impl<'a> BreachSolver<'a> {
 #[cfg(test)]
 mod tests {
     use super::*;
+    
+    pub fn to_string_vector(v: Vec<&str>) -> Vec<String> {
+        v.iter().map(|s| s.to_string()).collect()
+    }
 
     #[test]
     fn test_no_solution() {

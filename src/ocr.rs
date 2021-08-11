@@ -19,17 +19,17 @@ pub fn recognize_cell(cell: &Mat) -> Result<String, String> {
     // Refine cell image:  normalize() -> negate() -> threshold() -> extend()
 
     // Blur image
-    // let mut blur_cell = Mat::default().unwrap();
+    // let mut blur_cell = Mat::default();
     // let ksize = cv::Size::new(blur_size, blur_size);
     // imgproc::gaussian_blur(&cell, &mut blur_cell, ksize, 0.0, 0.0, cv::BORDER_CONSTANT).unwrap();
     // Unsharp image
-    // let mut unsharp_cell = Mat::default().unwrap();
+    // let mut unsharp_cell = Mat::default();
     // cv::add_weighted(&normalized_cell, 1.6, &blur_cell, -0.6, 0.0, &mut unsharp_cell, -1).unwrap();
     // // (image, 1.5, gaussian_3, -0.5, 0, image)
     // debug_show("unsharp", &unsharp_cell);
 
     // Normalize image
-    let mut normalized_cell = Mat::default().unwrap();
+    let mut normalized_cell = Mat::default();
     let no_mask = cv::no_array().unwrap();
     cv::normalize(
         &cell,
@@ -43,7 +43,7 @@ pub fn recognize_cell(cell: &Mat) -> Result<String, String> {
     .unwrap();
 
     // Make binary image and invert colors
-    let mut thr_cell = Mat::default().unwrap();
+    let mut thr_cell = Mat::default();
     imgproc::threshold(
         &normalized_cell,
         &mut thr_cell,
@@ -56,7 +56,7 @@ pub fn recognize_cell(cell: &Mat) -> Result<String, String> {
 
     // Extend top-bottom border
     let white = cv::Scalar::new(255.0, 255.0, 255.0, 255.0);
-    let mut border_cell = Mat::default().unwrap();
+    let mut border_cell = Mat::default();
     cv::copy_make_border(
         &thr_cell,
         &mut border_cell,

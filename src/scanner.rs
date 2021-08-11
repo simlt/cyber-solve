@@ -1,19 +1,20 @@
-use cv::Mat;
+use opencv::prelude::*;
 use opencv::core as cv;
 use opencv::highgui;
 use opencv::imgcodecs::{imread, ImreadModes};
 use opencv::imgproc;
-use opencv::prelude::*;
+use cv::Mat;
 
-use dxgcap::DXGIManager;
-use std::{collections::HashMap, ffi::c_void};
+use std::convert::TryInto;
+use std::num::TryFromIntError;
+use std::{collections::HashMap};
 
 use crate::configuration::{DaemonCfg, cfg_get, cfg_i32, cfg_str_vec};
 use crate::ocr::recognize_cell;
 use crate::screenshot::*;
 use crate::types::*;
 
-pub fn debug_show(name: &str, mat: &Mat) {
+pub(crate) fn debug_show(name: &str, mat: &Mat) {
     let wait_time = 3000; // delay ms
     highgui::named_window(
         name,
@@ -25,13 +26,13 @@ pub fn debug_show(name: &str, mat: &Mat) {
     highgui::destroy_window(name).unwrap();
 }
 
-pub fn capture_and_scan() -> Result<Puzzle, String> {
+pub(crate) fn capture_and_scan() -> Result<Puzzle, String> {
     let screen: cv::Mat = screenshot().expect("Failed to capture screenshot");
     let result = scan(&screen);
     result
 }
 
-pub fn scan<'screen, 'puzzle>(screen: &'screen Mat) -> Result<Puzzle, String> {
+pub(crate) fn scan<'screen, 'puzzle>(screen: &'screen Mat) -> Result<Puzzle, String> {
     let mut grey = unsafe {
         Mat::new_rows_cols(screen.rows(), screen.cols(), cv::CV_8UC1)
             .expect("Failed to initialize matrix")
@@ -59,11 +60,11 @@ pub fn scan<'screen, 'puzzle>(screen: &'screen Mat) -> Result<Puzzle, String> {
     // Detect and process daemons
     let daemons = scan_daemons(&grey).expect("Failed to process daemon data");
 
-    let puzzle = Puzzle { grid, daemons };
+    let puzzle = Puzzle { buffer_size, grid, daemons };
     Ok(puzzle)
 }
 
-fn detect_buffer_size(grey: &Mat) -> Result<i32, String> {
+fn detect_buffer_size(grey: &Mat) -> Result<u32, String> {
     // Get buffer section
     let buffer_left = cfg_i32("buffer.left");
     let buffer_right = cfg_i32("buffer.right");
@@ -83,7 +84,7 @@ fn detect_buffer_size(grey: &Mat) -> Result<i32, String> {
     .expect("File buffer.png not found");
     // Prepare threshold image
     let threshold = 70.0;
-    let mut thr_buffer = Mat::default().unwrap();
+    let mut thr_buffer = Mat::default();
     imgproc::threshold(
         &buffer,
         &mut thr_buffer,
@@ -94,7 +95,7 @@ fn detect_buffer_size(grey: &Mat) -> Result<i32, String> {
     .unwrap();
 
     // Find matches, each pixel represents the template similarity from 0 (worst) to 1 (best)
-    let mut match_result = Mat::default().unwrap();
+    let mut match_result = Mat::default();
     let mask = cv::no_array().unwrap();
     imgproc::match_template(
         &thr_buffer,
@@ -105,7 +106,7 @@ fn detect_buffer_size(grey: &Mat) -> Result<i32, String> {
     )
     .unwrap();
     // Find maximum spots by threshold and count points above threshold
-    let mut thr_match_result = Mat::default().unwrap();
+    let mut thr_match_result = Mat::default();
     imgproc::threshold(
         &match_result,
         &mut thr_match_result,
@@ -115,19 +116,19 @@ fn detect_buffer_size(grey: &Mat) -> Result<i32, String> {
     )
     .unwrap();
 
-    let buffer_size = cv::count_non_zero(&thr_match_result).unwrap();
+    let buffer_size: u32 = cv::count_non_zero(&thr_match_result).unwrap().try_into().map_err(|e: TryFromIntError| e.to_string())?;
     Ok(buffer_size)
 }
 
 struct CellScanInfo {
-    rows: i32,
-    cols: i32,
+    rows: u32,
+    cols: u32,
     cells: Vec<cv::Rect>,
 }
 
 fn debug_contours(img: &Mat, rects: &Vec<cv::Rect>) {
     let green_rgba = cv::Scalar::new(0.0, 255.0, 0.0, 255.0);
-    let mut contours = Mat::default().unwrap();
+    let mut contours = Mat::default();
     imgproc::cvt_color(&img, &mut contours, imgproc::COLOR_GRAY2RGBA, 0).unwrap();
     for rect in rects {
         imgproc::rectangle(
@@ -172,7 +173,7 @@ fn dilate_rect(grid_img: &Mat, ksize: cv::Size, area_threshold: i32) -> Vec<cv::
     let anchor = cv::Point::new(-1, -1);
     let border_value = imgproc::morphology_default_border_value().unwrap();
     let kernel = imgproc::get_structuring_element(imgproc::MORPH_RECT, ksize, anchor).unwrap();
-    let mut dilate = Mat::default().unwrap();
+    let mut dilate = Mat::default();
     imgproc::dilate(
         &grid_img,
         &mut dilate,
@@ -199,13 +200,13 @@ fn dilate_rect(grid_img: &Mat, ksize: cv::Size, area_threshold: i32) -> Vec<cv::
 
 fn detect_grid(grey: &Mat) -> Result<CellScanInfo, String> {
     // Blur grid then apply threshold to find cells
-    let mut blur = Mat::default().unwrap();
+    let mut blur = Mat::default();
     let blur_kernel = cv::Size {
         width: 35,
         height: 29,
     };
     imgproc::gaussian_blur(&grey, &mut blur, blur_kernel, 0.0, 0.0, cv::BORDER_DEFAULT).unwrap();
-    let mut thr_img = Mat::default().unwrap();
+    let mut thr_img = Mat::default();
     let gaussian_threshold = cfg_i32("opencv.detect_grid_threshold");
     imgproc::threshold(
         &blur,
@@ -268,8 +269,8 @@ fn detect_grid(grey: &Mat) -> Result<CellScanInfo, String> {
         }
     }
     let grid_info = CellScanInfo {
-        rows: rows.len() as i32,
-        cols: cols.len() as i32,
+        rows: rows.len().try_into().map_err(|e: TryFromIntError| e.to_string())?,
+        cols: cols.len().try_into().map_err(|e: TryFromIntError| e.to_string())?,
         cells,
     };
     Ok(grid_info)
@@ -278,13 +279,13 @@ fn detect_grid(grey: &Mat) -> Result<CellScanInfo, String> {
 fn detect_daemon_size(grey: &Mat, roi: &cv::Rect) -> Result<CellScanInfo, String> {
     // Blur grid then apply threshold to find cells
     let gaussian_threshold = cfg_i32("opencv.detect_daemon_threshold");
-    let mut blur = Mat::default().unwrap();
+    let mut blur = Mat::default();
     let blur_kernel = cv::Size {
         width: 35,
         height: 29,
     };
     imgproc::gaussian_blur(&grey, &mut blur, blur_kernel, 0.0, 0.0, cv::BORDER_DEFAULT).unwrap();
-    let mut thr_img = Mat::default().unwrap();
+    let mut thr_img = Mat::default();
     imgproc::threshold(
         &blur,
         &mut thr_img,
@@ -310,7 +311,7 @@ fn detect_daemon_size(grey: &Mat, roi: &cv::Rect) -> Result<CellScanInfo, String
     let cells = cols.iter().map(|col|  cv::Rect::new(col.x, roi.y, col.width, roi.height)).collect();
     let grid_info = CellScanInfo {
         rows: 1,
-        cols: cols.len() as i32,
+        cols: cols.len().try_into().map_err(|e: TryFromIntError| e.to_string())?,
         cells,
     };
     Ok(grid_info)
