@@ -10,6 +10,7 @@ use std::{collections::HashMap, ffi::c_void};
 
 use crate::configuration::{DaemonCfg, cfg_get, cfg_i32, cfg_str_vec};
 use crate::ocr::recognize_cell;
+use crate::screenshot::*;
 use crate::types::*;
 
 pub fn debug_show(name: &str, mat: &Mat) {
@@ -24,33 +25,8 @@ pub fn debug_show(name: &str, mat: &Mat) {
     highgui::destroy_window(name).unwrap();
 }
 
-pub fn screenshot() -> Result<Mat, String> {
-    let mut manager = DXGIManager::new(300).unwrap();
-    let (mut bgra, (width, height)) = manager.capture_frame_components().unwrap();
-    let ptr = bgra.as_mut_ptr() as *mut c_void;
-    let mat_result = unsafe {
-        Mat::new_rows_cols_with_data(
-            height as i32,
-            width as i32,
-            cv::CV_8UC4,
-            ptr,
-            cv::Mat_AUTO_STEP,
-        )
-    };
-    let mat = mat_result
-        .expect("Failed to initialize matrix data")
-        .clone(); // Deep clone data to avoid dangling pointer
-                  // debug_show("screenshot", &mat);
-    Ok(mat)
-}
-
 pub fn capture_and_scan() -> Result<Puzzle, String> {
-    // let screen: cv::Mat = screenshot().expect("Failed to capture screenshot"); // FIXME:
-    let screen = imread(
-        "assets/images/test_6x6.png",
-        ImreadModes::IMREAD_UNCHANGED as i32,
-    )
-    .expect("File test_6x6.png not found");
+    let screen: cv::Mat = screenshot().expect("Failed to capture screenshot");
     let result = scan(&screen);
     result
 }

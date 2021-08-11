@@ -1,6 +1,7 @@
 mod configuration;
 mod ocr;
 mod scanner;
+mod screenshot;
 mod solver;
 mod types;
 
