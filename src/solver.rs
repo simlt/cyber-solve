@@ -7,8 +7,6 @@ use crate::types::*;
 type CellCoord = (u32, u32);
 /// Pair containining a PuzzleMove and its target cell coordinate
 type PuzzleMoveWithCoord = (PuzzleMove, CellCoord);
-/// List of puzzle moves (aka solution)
-type PuzzleMoves = Vec<PuzzleMove>;
 
 
 #[derive(Debug, Clone, Copy)]
@@ -72,29 +70,29 @@ impl<'a> BreachSolver<'a> {
     pub fn new(puzzle: &'a Puzzle) -> BreachSolver<'a> {
         BreachSolver { puzzle }
     }
-    pub fn solve(&self, method: SolverSearchMethod) -> Option<PuzzleMoves> {
+    pub fn solve(&self, method: SolverSearchMethod) -> Option<PuzzleSolution> {
         let mut state = SolutionState::new(&self.puzzle);
         let first_only = matches!(method, SolverSearchMethod::FirstMatch);
         let mut solutions = self.step(&mut state, first_only);
         // Sort solutions by length
-        solutions.sort_by_key(|solution| solution.len());
+        solutions.sort_by_key(|solution| solution.moves.len());
         if let Some(solution) = solutions.get(0) {
             return Some(solution.to_owned())
         }
         None
     }
-    pub fn solve_all(&self) -> Vec<PuzzleMoves> {
+    pub fn solve_all(&self) -> Vec<PuzzleSolution> {
         let mut state = SolutionState::new(&self.puzzle);
         let mut solutions = self.step(&mut state, false);
         // Sort solutions by length
-        solutions.sort_by_key(|solution| solution.len());
+        solutions.sort_by_key(|solution| solution.moves.len());
         solutions
     }
 
-    fn step(&self, state: &SolutionState, first_only: bool) -> Vec<PuzzleMoves> {
+    fn step(&self, state: &SolutionState, first_only: bool) -> Vec<PuzzleSolution> {
         // Current buffer/move index on which we are iterating in current search step
         let current_move_index : usize = state.move_count.try_into().unwrap();
-        let mut solutions: Vec<PuzzleMoves> = Vec::new();
+        let mut solutions: Vec<PuzzleSolution> = Vec::new();
 
         // Get last move from state, handle implicit first move = Row(0) when state has no moves yet
         let last_move = if current_move_index == 0 {
@@ -148,6 +146,7 @@ impl<'a> BreachSolver<'a> {
             let cell_ref = self.puzzle.grid.get_cell(row, col);
 
             // Update daemon state
+            // TODO: (perf) prune if any remaning match len is greater than remaining buffer size
             for (n, daemon) in self.puzzle.daemons.iter().enumerate() {
                 let daemon_len = daemon.len();
                 let match_state = &mut new_state.daemons[n];
@@ -171,14 +170,14 @@ impl<'a> BreachSolver<'a> {
             new_state.buffer[current_move_index] = cell_ref.to_string();
             new_state.used_cells.insert((row, col), true);
 
-            
-            // println!("{}", new_state.to_string());
-            
             // Check all daemons for completion
             let all_daemons_completed = new_state.daemons.iter().all(|daemon| matches!(daemon, DaemonMatchState::Completed));
             if all_daemons_completed {
                 // Push valid solution
-                solutions.push(new_state.moves.clone());
+                solutions.push(PuzzleSolution {
+                    moves: new_state.moves.clone(),
+                    buffer: new_state.buffer.clone(),
+                });
                 if first_only {
                     // Stop searching for more solutions on first result
                     break;
@@ -191,8 +190,12 @@ impl<'a> BreachSolver<'a> {
                 }
             }
 
-            // Reset used_cell before cycling on next cell
+            // Reset used_cell and daemons before cycling on next cell
+            new_state.daemons.copy_from_slice(&state.daemons);
             new_state.used_cells.insert((row, col), false);
+            // NOTE(perf): the following lines can be omitted, because the next cycle is guaranteed to overwrite the same data
+            // new_state.buffer[current_move_index] = String::from("");
+            // new_state.moves[current_move_index] = PuzzleMove::None;
         }
 
         solutions
@@ -201,7 +204,7 @@ impl<'a> BreachSolver<'a> {
 
 #[cfg(test)]
 mod tests {
-    use opencv::core::Vec2i;
+    use std::iter::FromIterator;
 
     use super::*;
     use crate::types::PuzzleMove;
@@ -267,25 +270,48 @@ mod tests {
             )
         };
         let solver = BreachSolver::new(&test_puzzle_2);
+
+        // solve shortest
+        let solution = solver.solve(SolverSearchMethod::Shortest).unwrap();
+        assert_eq!(
+            moves_to_u32_vec(&solution.moves),
+            vec![0, 3, 4, 0, 2, 2, 3]
+        );
+        assert_eq!(solution.buffer, vec!["1C","55","55","55","1C","1C","BD"]);
+
+        // solve_all
         let solutions = solver.solve_all();
-        let mapped_solutions: Vec<Vec<u32>> = solutions.iter().map(moves_to_u32_vec).collect();
+        let str = Vec::from_iter(solutions.iter().map(|s| s.to_string())).join("\n");
+        println!("{}", &str);
+        assert_eq!(solutions.len(), 18);
+        let mapped_solutions: Vec<Vec<u32>> = solutions.iter().map(|solution| moves_to_u32_vec(&solution.moves)).collect();
         assert_eq!(
             mapped_solutions,
             vec![
-                [0, 3, 4, 0, 2, 2, 3]
+                [0, 3, 4, 0, 2, 2, 3],
+                [0, 3, 4, 1, 0, 4, 2],
+                [0, 3, 4, 1, 2, 2, 3],
+                [0, 4, 2, 0, 4, 1, 3],
+                [0, 4, 2, 0, 4, 3, 0],
+                [0, 4, 2, 1, 3, 4, 1],
+                [0, 4, 2, 1, 4, 3, 0],
+                [0, 4, 2, 2, 1, 4, 3],
+                [0, 4, 2, 3, 4, 1, 3],
+                [1, 4, 3, 1, 0, 4, 2],
+                [1, 4, 3, 1, 2, 2, 3],
+                [2, 2, 3, 0, 4, 1, 3],
+                [2, 2, 3, 0, 4, 3, 0],
+                [2, 2, 3, 3, 4, 1, 3],
+                [3, 1, 4, 0, 0, 4, 2],
+                [3, 1, 4, 0, 2, 2, 3],
+                [3, 1, 4, 3, 2, 2, 3],
+                [3, 4, 1, 2, 4, 4, 2]
             ]
         );
-
-        let solution = solver.solve(SolverSearchMethod::Shortest).unwrap();
-        assert_eq!(
-            moves_to_u32_vec(&solution),
-            vec![0, 3, 4, 0, 2, 2, 3]
-        );
-        // TODO: get buffer from solution
-        // assert_eq!(solution_buffer, ["1C","55","55","55","1C","1C","BD"]);
     }
 
-    #[test]
+    // #[test]
+    #[allow(dead_code)]
     fn test_debug_grid() {
         let test_puzzle_2: Puzzle = Puzzle {
             buffer_size: 10,
@@ -306,11 +332,6 @@ mod tests {
         };
         let solver = BreachSolver::new(&test_puzzle_2);
         let solution = solver.solve(SolverSearchMethod::FirstMatch).unwrap();
-        assert_eq!(
-            moves_to_u32_vec(&solution),
-            vec![0, 3, 4, 0, 2, 2, 3]
-        );
-        // TODO: get buffer from solution
-        // assert_eq!(solution_buffer, ["1C","55","55","55","1C","1C","BD"]);
+        println!("{}", solution.to_string());
     }
 }

@@ -1,9 +1,3 @@
-pub struct PuzzleGrid {
-    pub rows: u32,
-    pub cols: u32,
-    pub cells: Vec<String>,
-}
-
 /// Defines which move is being selected: SelectRow means the column is fixed and a row can be chosen
 #[derive(Debug, Clone, Copy)]
 pub enum PuzzleMoveType {
@@ -16,6 +10,28 @@ pub enum PuzzleMove {
     None,
     Row(u32),
     Column(u32),
+}
+
+/// List of puzzle moves (aka solution)
+pub type PuzzleMoves = Vec<PuzzleMove>;
+
+#[derive(Clone)]
+pub struct PuzzleSolution {
+    pub buffer: Vec<String>,
+    pub moves: PuzzleMoves,
+}
+impl std::fmt::Display for PuzzleSolution {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.write_str(&format!("buffer: {:?}\n", self.buffer))?;
+        f.write_str(&format!("moves: {:?}\n", self.moves))?;
+        Ok(())
+    }
+}
+
+pub struct PuzzleGrid {
+    pub rows: u32,
+    pub cols: u32,
+    pub cells: Vec<String>,
 }
 
 impl PuzzleGrid {
