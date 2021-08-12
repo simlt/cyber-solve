@@ -417,12 +417,29 @@ mod tests {
 
     static FILE_TEST_5: &str = "assets/images/test_5x5.jpg";
     static FILE_TEST_6: &str = "assets/images/test_6x6.png";
+    static FILE_TEST_6_2: &str = "assets/images/test_6x6_2.jpg";
     static FILE_TEST_4_DAEMONS: &str = "assets/images/test_4-daemons.jpg";
 
     #[test]
-    fn test_buffer() {
+    fn test_buffer_detect_7() {
+        let test_screen = imread(FILE_TEST_4_DAEMONS, ImreadModes::IMREAD_GRAYSCALE as i32)
+            .expect(format!("File {} not found", FILE_TEST_4_DAEMONS).as_str());
+        let buffer_size = detect_buffer_size(&test_screen).unwrap();
+        assert_eq!(buffer_size, 7);
+    }
+
+    #[test]
+    fn test_buffer_detect_8() {
         let test_screen = imread(FILE_TEST_6, ImreadModes::IMREAD_GRAYSCALE as i32)
             .expect(format!("File {} not found", FILE_TEST_6).as_str());
+        let buffer_size = detect_buffer_size(&test_screen).unwrap();
+        assert_eq!(buffer_size, 8);
+    }
+
+    #[test]
+    fn test_buffer_detect_8_2() {
+        let test_screen = imread(FILE_TEST_6_2, ImreadModes::IMREAD_GRAYSCALE as i32)
+            .expect(format!("File {} not found", FILE_TEST_6_2).as_str());
         let buffer_size = detect_buffer_size(&test_screen).unwrap();
         assert_eq!(buffer_size, 8);
     }
