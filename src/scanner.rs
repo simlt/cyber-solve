@@ -1,15 +1,15 @@
-use opencv::prelude::*;
+use cv::Mat;
 use opencv::core as cv;
 use opencv::highgui;
 use opencv::imgcodecs::{imread, ImreadModes};
 use opencv::imgproc;
-use cv::Mat;
+use opencv::prelude::*;
 
+use std::collections::HashMap;
 use std::convert::TryInto;
 use std::num::TryFromIntError;
-use std::{collections::HashMap};
 
-use crate::configuration::{DaemonCfg, cfg_get, cfg_i32, cfg_str_vec};
+use crate::configuration::{cfg_get, cfg_i32, cfg_str_vec, DaemonCfg};
 use crate::ocr::recognize_cell;
 use crate::screenshot::*;
 use crate::types::*;
@@ -60,7 +60,11 @@ pub(crate) fn scan<'screen, 'puzzle>(screen: &'screen Mat) -> Result<Puzzle, Str
     // Detect and process daemons
     let daemons = scan_daemons(&grey).expect("Failed to process daemon data");
 
-    let puzzle = Puzzle { buffer_size, grid, daemons };
+    let puzzle = Puzzle {
+        buffer_size,
+        grid,
+        daemons,
+    };
     Ok(puzzle)
 }
 
@@ -116,7 +120,10 @@ fn detect_buffer_size(grey: &Mat) -> Result<u32, String> {
     )
     .unwrap();
 
-    let buffer_size: u32 = cv::count_non_zero(&thr_match_result).unwrap().try_into().map_err(|e: TryFromIntError| e.to_string())?;
+    let buffer_size: u32 = cv::count_non_zero(&thr_match_result)
+        .unwrap()
+        .try_into()
+        .map_err(|e: TryFromIntError| e.to_string())?;
     Ok(buffer_size)
 }
 
@@ -226,7 +233,7 @@ fn detect_grid(grey: &Mat) -> Result<CellScanInfo, String> {
     let grid_height = grid_bottom - grid_top;
     let cell_min_area = 25 * 25;
     let min_size = cv::Size::new(5, 5);
-    
+
     let mut roi = cv::Rect::new(grid_left, grid_top, grid_width, grid_height);
     let mut grid_thr_img = Mat::roi(&thr_img, roi).unwrap();
     // let debug_roi_img = Mat::roi(&grey, roi).unwrap();
@@ -235,7 +242,7 @@ fn detect_grid(grey: &Mat) -> Result<CellScanInfo, String> {
     // Dilate horizontally to detect rows
     let dilate_row = 50;
     let kernel_h = cv::Size::new(dilate_row, 1);
-    let row_area_threshold= cell_min_area * min_size.width;
+    let row_area_threshold = cell_min_area * min_size.width;
     let mut rows = dilate_rect(&grid_thr_img, kernel_h, row_area_threshold);
     // sort rows by y coordinate
     rows.sort_by_key(|row| row.y);
@@ -244,16 +251,16 @@ fn detect_grid(grey: &Mat) -> Result<CellScanInfo, String> {
     // Adjust top and bottom grid rect if smaller. This avoids extranous data noise during column detection
     roi.y = rows.first().map(|row| row.y).unwrap_or(roi.y);
     let new_grid_bottom_y = rows
-    .last()
-    .map(|row| row.y + row.height)
-    .unwrap_or(roi.y + roi.height);
+        .last()
+        .map(|row| row.y + row.height)
+        .unwrap_or(roi.y + roi.height);
     roi.height = new_grid_bottom_y - roi.y;
     grid_thr_img = Mat::roi(&thr_img, roi).unwrap();
 
     // Dilate vertically to detect cols
     let dilate_col = 50;
     let kernel_v = cv::Size::new(1, dilate_col);
-    let col_area_threshold= cell_min_area * min_size.height;
+    let col_area_threshold = cell_min_area * min_size.height;
     let mut cols = dilate_rect(&grid_thr_img, kernel_v, col_area_threshold);
     // Sort cols by x thr_img coordinate
     cols.sort_by_key(|col| col.x);
@@ -269,8 +276,14 @@ fn detect_grid(grey: &Mat) -> Result<CellScanInfo, String> {
         }
     }
     let grid_info = CellScanInfo {
-        rows: rows.len().try_into().map_err(|e: TryFromIntError| e.to_string())?,
-        cols: cols.len().try_into().map_err(|e: TryFromIntError| e.to_string())?,
+        rows: rows
+            .len()
+            .try_into()
+            .map_err(|e: TryFromIntError| e.to_string())?,
+        cols: cols
+            .len()
+            .try_into()
+            .map_err(|e: TryFromIntError| e.to_string())?,
         cells,
     };
     Ok(grid_info)
@@ -308,16 +321,22 @@ fn detect_daemon_size(grey: &Mat, roi: &cv::Rect) -> Result<CellScanInfo, String
     // debug_contours(&grey, &cols);
 
     // Map rows and cols to cells rectangles
-    let cells = cols.iter().map(|col|  cv::Rect::new(col.x, roi.y, col.width, roi.height)).collect();
+    let cells = cols
+        .iter()
+        .map(|col| cv::Rect::new(col.x, roi.y, col.width, roi.height))
+        .collect();
     let grid_info = CellScanInfo {
         rows: 1,
-        cols: cols.len().try_into().map_err(|e: TryFromIntError| e.to_string())?,
+        cols: cols
+            .len()
+            .try_into()
+            .map_err(|e: TryFromIntError| e.to_string())?,
         cells,
     };
     Ok(grid_info)
 }
 
-fn scan_daemons(img: &Mat) -> Result<Vec<PuzzleDaemon>, String>{
+fn scan_daemons(img: &Mat) -> Result<Vec<PuzzleDaemon>, String> {
     let daemon_cfg: DaemonCfg = cfg_get("daemons");
     let rows = daemon_cfg.rows;
     let cell_width = daemon_cfg.cell_width;
@@ -332,7 +351,11 @@ fn scan_daemons(img: &Mat) -> Result<Vec<PuzzleDaemon>, String>{
         println!("Daemon size detected: {}", cell_info.cols);
         if cell_info.cols > 0 {
             // Extract sequence cells
-            let daemon: PuzzleDaemon = cell_info.cells.iter().map(|cell| extract_cell(&img, &cell).unwrap()).collect();
+            let daemon: PuzzleDaemon = cell_info
+                .cells
+                .iter()
+                .map(|cell| extract_cell(&img, &cell).unwrap())
+                .collect();
             // let daemon = cells_txt_result.unwrap();
             daemons.push(daemon);
         }
@@ -343,17 +366,20 @@ fn scan_daemons(img: &Mat) -> Result<Vec<PuzzleDaemon>, String>{
 fn process_grid(grey: &Mat, grid_info: &CellScanInfo) -> Result<Vec<String>, String> {
     // debug_contours(grey, &grid_info.cells);
 
-    let cells_txt: Result<Vec<String>, String> = grid_info.cells.iter().map(|cell| extract_cell(&grey, &cell)).collect();
+    let cells_txt: Result<Vec<String>, String> = grid_info
+        .cells
+        .iter()
+        .map(|cell| extract_cell(&grey, &cell))
+        .collect();
     cells_txt
 }
 
 fn extract_cell(img: &Mat, cell: &cv::Rect) -> Result<String, String> {
     // Helper map to fix most common OCR mistakes
-    let correction_map: HashMap<&str, &str> = [
-        ("BO", "BD"),
-        ("C", "1C"),
-        ("TA", "7A")
-    ].iter().cloned().collect();
+    let correction_map: HashMap<&str, &str> = [("BO", "BD"), ("C", "1C"), ("TA", "7A")]
+        .iter()
+        .cloned()
+        .collect();
     let valid_codes = cfg_str_vec("valid_codes");
 
     let roi = Mat::roi(img, *cell).unwrap();
@@ -368,7 +394,6 @@ fn extract_cell(img: &Mat, cell: &cv::Rect) -> Result<String, String> {
     }
     Ok(text)
 }
-
 
 // TESTS
 #[cfg(test)]
@@ -410,13 +435,16 @@ mod tests {
         let test_screen = imread(FILE_TEST_5, ImreadModes::IMREAD_UNCHANGED as i32)
             .expect(format!("File {} not found", FILE_TEST_5).as_str());
         let puzzle = scan(&test_screen).unwrap();
-        assert_eq!(puzzle.grid.cells, vec![
-            "55","55","1C","55","55",
-            "55","E9","BD","1C","BD",
-            "E9","1C","1C","1C","55",
-            "E9","1C","BD","1C","BD",
-            "55","55","BD","55","BD"
-        ]);
+        assert_eq!(
+            puzzle.grid.cells,
+            vec![
+                "55","55","1C","55","55",
+                "55","E9","BD","1C","BD",
+                "E9","1C","1C","1C","55",
+                "E9","1C","BD","1C","BD",
+                "55","55","BD","55","BD"
+            ]
+        );
     }
 
     #[test]
@@ -424,14 +452,17 @@ mod tests {
         let test_screen = imread(FILE_TEST_6, ImreadModes::IMREAD_UNCHANGED as i32)
             .expect(format!("File {} not found", FILE_TEST_6).as_str());
         let puzzle = scan(&test_screen).unwrap();
-        assert_eq!(puzzle.grid.cells, vec![
-            "E9","1C","55","55","55","1C",
-            "55","55","55","7A","BD","BD",
-            "BD","E9","E9","55","BD","1C",
-            "1C","1C","7A","55","55","7A",
-            "7A","7A","55","55","1C","55",
-            "E9","E9","1C","BD","55","7A",
-        ]);
+        assert_eq!(
+            puzzle.grid.cells,
+            vec![
+                "E9","1C","55","55","55","1C",
+                "55","55","55","7A","BD","BD",
+                "BD","E9","E9","55","BD","1C",
+                "1C","1C","7A","55","55","7A",
+                "7A","7A","55","55","1C","55",
+                "E9","E9","1C","BD","55","7A",
+            ]
+        );
     }
 
     #[test]
@@ -439,11 +470,14 @@ mod tests {
         let test_screen = imread(FILE_TEST_4_DAEMONS, ImreadModes::IMREAD_GRAYSCALE as i32)
             .expect(format!("File {} not found", FILE_TEST_4_DAEMONS).as_str());
         let daemons = scan_daemons(&test_screen).unwrap();
-        assert_eq!(daemons, vec![
-            vec!["E9", "55"],
-            vec!["55", "BD", "E9"],
-            vec!["FF", "1C", "BD", "E9"],
-            vec!["55", "1C", "FF", "55"]
-        ]);
+        assert_eq!(
+            daemons,
+            vec![
+                vec!["E9", "55"],
+                vec!["55", "BD", "E9"],
+                vec!["FF", "1C", "BD", "E9"],
+                vec!["55", "1C", "FF", "55"]
+            ]
+        );
     }
 }

@@ -3,9 +3,9 @@ use opencv::prelude::*;
 #[cfg(target_os = "windows")]
 pub(crate) fn screenshot() -> Result<Mat, String> {
     use dxgcap::DXGIManager;
-    use std::ffi::c_void;
     use opencv::core as cv;
-    
+    use std::ffi::c_void;
+
     let mut manager = DXGIManager::new(300).unwrap();
     let (mut bgra, (width, height)) = manager.capture_frame_components().unwrap();
     let ptr = bgra.as_mut_ptr() as *mut c_void;
@@ -19,8 +19,9 @@ pub(crate) fn screenshot() -> Result<Mat, String> {
         )
     };
     let mat = mat_result
-    .expect("Failed to initialize matrix data")
-    .clone(); // Deep clone data to avoid dangling pointer
+        .expect("Failed to initialize matrix data")
+        .clone(); // Deep clone data to avoid dangling pointer
+
     // debug_show("screenshot", &mat);
     Ok(mat)
 }

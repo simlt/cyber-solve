@@ -2,19 +2,16 @@ use std::{collections::HashMap, convert::TryInto};
 
 use crate::types::*;
 
-
 /// row, col index pair for cell grid coordinate
 type CellCoord = (u32, u32);
 /// Pair containining a PuzzleMove and its target cell coordinate
 type PuzzleMoveWithCoord = (PuzzleMove, CellCoord);
-
 
 #[derive(Debug, Clone, Copy)]
 enum DaemonMatchState {
     Completed,
     Partial(usize),
 }
-
 
 #[derive(Debug, Clone)]
 struct SolutionState {
@@ -49,7 +46,10 @@ impl SolutionState {
 
 impl std::fmt::Display for SolutionState {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        f.write_str(&format!("\n#{} next: {:?}  {:?}\n", self.move_count, self.next_move_type, self.buffer))?;
+        f.write_str(&format!(
+            "\n#{} next: {:?}  {:?}\n",
+            self.move_count, self.next_move_type, self.buffer
+        ))?;
         f.write_str(&format!("moves: {:?}\n", self.moves))?;
         f.write_str(&format!("daemons: {:?}\n", self.daemons))?;
         f.write_str(&format!("used_cells: {:?}\n", self.used_cells))?;
@@ -77,7 +77,7 @@ impl<'a> BreachSolver<'a> {
         // Sort solutions by length
         solutions.sort_by_key(|solution| solution.moves.len());
         if let Some(solution) = solutions.get(0) {
-            return Some(solution.to_owned())
+            return Some(solution.to_owned());
         }
         None
     }
@@ -91,7 +91,7 @@ impl<'a> BreachSolver<'a> {
 
     fn step(&self, state: &SolutionState, first_only: bool) -> Vec<PuzzleSolution> {
         // Current buffer/move index on which we are iterating in current search step
-        let current_move_index : usize = state.move_count.try_into().unwrap();
+        let current_move_index: usize = state.move_count.try_into().unwrap();
         let mut solutions: Vec<PuzzleSolution> = Vec::new();
 
         // Get last move from state, handle implicit first move = Row(0) when state has no moves yet
@@ -105,7 +105,7 @@ impl<'a> BreachSolver<'a> {
         let next_move_type: PuzzleMoveType;
         let is_unused_cell = |(_, cell): &(PuzzleMove, CellCoord)| {
             if let Some(used) = state.used_cells.get(cell) {
-                return !*used
+                return !*used;
             }
             true
         };
@@ -140,7 +140,7 @@ impl<'a> BreachSolver<'a> {
         let mut new_state = state.to_owned();
         new_state.move_count += 1;
         new_state.next_move_type = next_move_type;
-        
+
         // Try each available move
         for (new_move, (row, col)) in available_moves {
             let cell_ref = self.puzzle.grid.get_cell(row, col);
@@ -163,7 +163,7 @@ impl<'a> BreachSolver<'a> {
                         *match_len = 0;
                     }
                 }
-            }            
+            }
 
             // Update cell usage
             new_state.moves[current_move_index] = new_move;
@@ -171,7 +171,10 @@ impl<'a> BreachSolver<'a> {
             new_state.used_cells.insert((row, col), true);
 
             // Check all daemons for completion
-            let all_daemons_completed = new_state.daemons.iter().all(|daemon| matches!(daemon, DaemonMatchState::Completed));
+            let all_daemons_completed = new_state
+                .daemons
+                .iter()
+                .all(|daemon| matches!(daemon, DaemonMatchState::Completed));
             if all_daemons_completed {
                 // Push valid solution
                 solutions.push(PuzzleSolution {
@@ -208,18 +211,19 @@ mod tests {
 
     use super::*;
     use crate::types::PuzzleMove;
-    
+
     fn to_string_vector(v: Vec<&str>) -> Vec<String> {
         v.iter().map(|s| s.to_string()).collect()
     }
 
     fn moves_to_u32_vec(moves: &PuzzleMoves) -> Vec<u32> {
-        moves.iter().filter_map(|m| {
-            match m {
+        moves
+            .iter()
+            .filter_map(|m| match m {
                 &PuzzleMove::Column(i) | &PuzzleMove::Row(i) => Some(i),
-                &PuzzleMove::None => None
-            }
-        }).collect()
+                &PuzzleMove::None => None,
+            })
+            .collect()
     }
 
     #[test]
@@ -241,21 +245,21 @@ mod tests {
                     "E9","1C","BD","1C","BD",
                     "55","55","BD","55","BD",
                 ],
-            )
+            ),
         };
         let solver = BreachSolver::new(&test_puzzle_1);
         let solution = solver.solve(SolverSearchMethod::FirstMatch);
         assert!(solution.is_none());
     }
-    
+
     #[test]
     fn test_1_solution() {
         let test_puzzle_2: Puzzle = Puzzle {
             buffer_size: 7,
             daemons: vec![
-                to_string_vector(vec!["1C","55"]),
-                to_string_vector(vec!["55","55","55"]),
-                to_string_vector(vec!["1C","1C","BD"]),
+                to_string_vector(vec!["1C", "55"]),
+                to_string_vector(vec!["55", "55", "55"]),
+                to_string_vector(vec!["1C", "1C", "BD"]),
             ],
             grid: PuzzleGrid::new(
                 5,
@@ -267,24 +271,27 @@ mod tests {
                     "55","E9","1C","1C","55",
                     "1C","55","BD","55","1C",
                 ],
-            )
+            ),
         };
         let solver = BreachSolver::new(&test_puzzle_2);
 
         // solve shortest
         let solution = solver.solve(SolverSearchMethod::Shortest).unwrap();
+        assert_eq!(moves_to_u32_vec(&solution.moves), vec![0, 3, 4, 0, 2, 2, 3]);
         assert_eq!(
-            moves_to_u32_vec(&solution.moves),
-            vec![0, 3, 4, 0, 2, 2, 3]
+            solution.buffer,
+            vec!["1C", "55", "55", "55", "1C", "1C", "BD"]
         );
-        assert_eq!(solution.buffer, vec!["1C","55","55","55","1C","1C","BD"]);
 
         // solve_all
         let solutions = solver.solve_all();
         let str = Vec::from_iter(solutions.iter().map(|s| s.to_string())).join("\n");
         println!("{}", &str);
         assert_eq!(solutions.len(), 18);
-        let mapped_solutions: Vec<Vec<u32>> = solutions.iter().map(|solution| moves_to_u32_vec(&solution.moves)).collect();
+        let mapped_solutions: Vec<Vec<u32>> = solutions
+            .iter()
+            .map(|solution| moves_to_u32_vec(&solution.moves))
+            .collect();
         assert_eq!(
             mapped_solutions,
             vec![
@@ -315,9 +322,9 @@ mod tests {
     fn test_debug_grid() {
         let test_puzzle_2: Puzzle = Puzzle {
             buffer_size: 10,
-            daemons: vec![
-                to_string_vector(vec!["A1","A2","B2","B3","C3","C4","D4","D5","E5"]),
-            ],
+            daemons: vec![to_string_vector(vec![
+                "A1", "A2", "B2", "B3", "C3", "C4", "D4", "D5", "E5",
+            ])],
             grid: PuzzleGrid::new(
                 5,
                 5,
@@ -328,7 +335,7 @@ mod tests {
                     "A4","B4","C4","D4","E4",
                     "A5","B5","C5","D5","E5",
                 ],
-            )
+            ),
         };
         let solver = BreachSolver::new(&test_puzzle_2);
         let solution = solver.solve(SolverSearchMethod::FirstMatch).unwrap();

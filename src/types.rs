@@ -39,17 +39,25 @@ impl PuzzleGrid {
         PuzzleGrid {
             rows,
             cols,
-            cells: cells.iter().map(|s| s.to_string()).collect()
+            cells: cells.iter().map(|s| s.to_string()).collect(),
         }
     }
 
     pub fn row(&self, index: u32) -> Vec<&str> {
-        return self.cells[(index * self.cols) as usize..((index + 1) * self.cols) as usize].iter().map(String::as_str).collect();
+        return self.cells[(index * self.cols) as usize..((index + 1) * self.cols) as usize]
+            .iter()
+            .map(String::as_str)
+            .collect();
     }
 
     pub fn col(&self, index: u32) -> Vec<&str> {
         let mut col = Vec::new();
-        for cell in self.cells.iter().skip(index as usize).step_by(self.cols as usize) {
+        for cell in self
+            .cells
+            .iter()
+            .skip(index as usize)
+            .step_by(self.cols as usize)
+        {
             col.push(cell.as_str());
         }
         return col;
@@ -75,7 +83,8 @@ impl std::fmt::Display for PuzzleGrid {
                 + &self.cells[row_offset..(row_offset + self.cols as usize)]
                     .iter()
                     .map(|cell| format!("{:^width$}", cell, width = cell_span))
-                    .collect::<Vec<_>>().join(col_sep)
+                    .collect::<Vec<_>>()
+                    .join(col_sep)
                 + col_sep
                 + "\n";
             grid_rows.push(row_text);
@@ -87,7 +96,6 @@ impl std::fmt::Display for PuzzleGrid {
 }
 
 pub type PuzzleDaemon = Vec<String>;
-
 
 pub struct Puzzle {
     pub buffer_size: u32,
@@ -101,13 +109,15 @@ mod tests {
 
     #[test]
     fn grid() {
-        let grid = PuzzleGrid::new(4, 3,
+        let grid = PuzzleGrid::new(
+            4,
+            3,
             vec![
                 "0", "1", "2",
                 "3", "4", "5",
                 "6", "7", "8",
                 "9", "10", "11"
-            ]
+            ],
         );
 
         assert_eq!(grid.row(1), ["3", "4", "5"]);

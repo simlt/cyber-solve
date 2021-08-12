@@ -1,7 +1,7 @@
-use lazy_static::lazy_static;
 use config::{Config, File};
-use std::sync::RwLock;
+use lazy_static::lazy_static;
 use serde::Deserialize;
+use std::sync::RwLock;
 
 #[derive(Debug, Deserialize)]
 pub(crate) struct DaemonCfg {
@@ -37,16 +37,18 @@ pub(crate) struct DaemonRow {
 //     pub daemons: Daemon,
 //     pub grid: Rect,
 //     pub valid_codes: Vec<String>,
-//     pub opencv: OpenCV, 
+//     pub opencv: OpenCV,
 // }
 
 lazy_static! {
-	static ref SETTINGS: RwLock<Config> = RwLock::new(load());
+    static ref SETTINGS: RwLock<Config> = RwLock::new(load());
 }
 fn load() -> Config {
     let mut settings: Config = Config::default();
     // Add in `./settings.json`
-    settings.merge(File::with_name("config/settings.json")).unwrap();
+    settings
+        .merge(File::with_name("config/settings.json"))
+        .unwrap();
 
     settings
 }
@@ -69,7 +71,12 @@ pub fn cfg_str(key: &str) -> &str {
 }
 pub fn cfg_str_vec(key: &str) -> Vec<String> {
     let settings = SETTINGS.read().unwrap();
-    (*settings).get_array(key).unwrap().into_iter().map(|val| val.to_string()).collect()
+    (*settings)
+        .get_array(key)
+        .unwrap()
+        .into_iter()
+        .map(|val| val.to_string())
+        .collect()
 }
 pub fn cfg_get<'de, T: Deserialize<'de>>(key: &str) -> T {
     let settings = SETTINGS.read().unwrap();
