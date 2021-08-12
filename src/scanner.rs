@@ -148,7 +148,7 @@ fn detect_buffer_size(grey: &Mat) -> Result<u32, String> {
     imgproc::threshold(
         &match_result,
         &mut thr_match_result,
-        0.9,
+        0.85,
         255.0,
         imgproc::THRESH_BINARY,
     )
