@@ -304,9 +304,10 @@ fn detect_grid(grey: &Mat) -> Result<CellScanInfo, String> {
     Ok(grid_info)
 }
 
-fn detect_daemon_size(grey: &Mat, roi: &cv::Rect) -> Result<CellScanInfo, String> {
+fn detect_daemon_size(grey: &Mat, roi: &cv::Rect) -> Result<Option<CellScanInfo>, String> {
     // Blur grid then apply threshold to find cells
     let gaussian_threshold = cfg_i32("opencv.detect_daemon_threshold");
+    let daemon_min_length= cfg_i32("daemons.min_length").try_into().unwrap();
     let mut blur = Mat::default();
     let blur_kernel = cv::Size {
         width: 35,
@@ -322,6 +323,7 @@ fn detect_daemon_size(grey: &Mat, roi: &cv::Rect) -> Result<CellScanInfo, String
         imgproc::THRESH_BINARY,
     )
     .unwrap();
+    // debug_show("Daemon size threshold", &thr_img);
 
     // Get daemon region of interest
     let grid_thr_img = Mat::roi(&thr_img, *roi).unwrap();
@@ -331,6 +333,10 @@ fn detect_daemon_size(grey: &Mat, roi: &cv::Rect) -> Result<CellScanInfo, String
     let kernel_v = cv::Size::new(1, dilate_col);
     let cell_min_area = 20 * 20;
     let mut cols = dilate_rect(&grid_thr_img, kernel_v, cell_min_area);
+    // Skip this daemon ROI if cols are not of the min length
+    if cols.len() < daemon_min_length {
+        return Ok(None);
+    };
     // Sort cols by x thr_img coordinate
     cols.sort_by_key(|col| col.x);
     // debug_contours(&grey, &cols);
@@ -348,7 +354,7 @@ fn detect_daemon_size(grey: &Mat, roi: &cv::Rect) -> Result<CellScanInfo, String
             .map_err(|e: TryFromIntError| e.to_string())?,
         cells,
     };
-    Ok(grid_info)
+    Ok(Some(grid_info))
 }
 
 fn scan_daemons(img: &Mat) -> Result<Vec<PuzzleDaemon>, String> {
@@ -362,9 +368,9 @@ fn scan_daemons(img: &Mat) -> Result<Vec<PuzzleDaemon>, String> {
     for row in &rows {
         let height = row.bottom - row.top;
         let daemon_roi = cv::Rect::new(daemon_cfg.left, row.top, max_width, height);
-        let cell_info = detect_daemon_size(img, &daemon_roi).unwrap();
-        println!("Daemon size detected: {}", cell_info.cols);
-        if cell_info.cols > 0 {
+        let detect_result = detect_daemon_size(img, &daemon_roi).unwrap();
+        if let Some (cell_info) = detect_result {
+            println!("Daemon size detected: {}", cell_info.cols);
             // Extract sequence cells
             let daemon: PuzzleDaemon = cell_info
                 .cells
