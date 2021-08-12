@@ -8,5 +8,5 @@ mod types;
 fn main() {
     let puzzle = scanner::capture_and_scan().unwrap();
     let solver = solver::BreachSolver::new(&puzzle);
-    solver.solve();
+    solver.solve(solver::SolverSearchMethod::Shortest);
 }

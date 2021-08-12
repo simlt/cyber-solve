@@ -5,7 +5,7 @@ pub struct PuzzleGrid {
 }
 
 /// Defines which move is being selected: SelectRow means the column is fixed and a row can be chosen
-#[derive(Debug)]
+#[derive(Debug, Clone, Copy)]
 pub enum PuzzleMoveType {
     SelectRow,
     SelectColumn,

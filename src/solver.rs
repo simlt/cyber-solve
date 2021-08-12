@@ -18,7 +18,7 @@ enum DaemonMatchState {
 }
 
 
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 struct SolutionState {
     /// Vector with current Buffer state
     buffer: Vec<String>,
@@ -59,17 +59,23 @@ impl std::fmt::Display for SolutionState {
     }
 }
 
-pub(crate) struct BreachSolver<'a> {
+pub enum SolverSearchMethod {
+    Shortest,
+    FirstMatch,
+}
+
+pub struct BreachSolver<'a> {
     puzzle: &'a Puzzle,
 }
 
 impl<'a> BreachSolver<'a> {
-    pub(crate) fn new(puzzle: &'a Puzzle) -> BreachSolver<'a> {
+    pub fn new(puzzle: &'a Puzzle) -> BreachSolver<'a> {
         BreachSolver { puzzle }
     }
-    pub(crate) fn solve(&self) -> Option<PuzzleMoves> {
+    pub fn solve(&self, method: SolverSearchMethod) -> Option<PuzzleMoves> {
         let mut state = SolutionState::new(&self.puzzle);
-        let mut solutions = self.step(&mut state, false);
+        let first_only = matches!(method, SolverSearchMethod::FirstMatch);
+        let mut solutions = self.step(&mut state, first_only);
         // Sort solutions by length
         solutions.sort_by_key(|solution| solution.len());
         if let Some(solution) = solutions.get(0) {
@@ -77,8 +83,15 @@ impl<'a> BreachSolver<'a> {
         }
         None
     }
+    pub fn solve_all(&self) -> Vec<PuzzleMoves> {
+        let mut state = SolutionState::new(&self.puzzle);
+        let mut solutions = self.step(&mut state, false);
+        // Sort solutions by length
+        solutions.sort_by_key(|solution| solution.len());
+        solutions
+    }
 
-    fn step(&self, state: &mut SolutionState, first_only: bool) -> Vec<PuzzleMoves> {
+    fn step(&self, state: &SolutionState, first_only: bool) -> Vec<PuzzleMoves> {
         // Current buffer/move index on which we are iterating in current search step
         let current_move_index : usize = state.move_count.try_into().unwrap();
         let mut solutions: Vec<PuzzleMoves> = Vec::new();
@@ -125,9 +138,10 @@ impl<'a> BreachSolver<'a> {
             }
         };
 
-        // Update move state
-        state.move_count += 1;
-        state.next_move_type = next_move_type;
+        // Create new state
+        let mut new_state = state.to_owned();
+        new_state.move_count += 1;
+        new_state.next_move_type = next_move_type;
         
         // Try each available move
         for (new_move, (row, col)) in available_moves {
@@ -136,7 +150,7 @@ impl<'a> BreachSolver<'a> {
             // Update daemon state
             for (n, daemon) in self.puzzle.daemons.iter().enumerate() {
                 let daemon_len = daemon.len();
-                let match_state = &mut state.daemons[n];
+                let match_state = &mut new_state.daemons[n];
                 // We can ignore already completed daemons and check only the remaining ones
                 if let DaemonMatchState::Partial(ref mut match_len) = *match_state {
                     // If cell matches daemon cell
@@ -153,32 +167,32 @@ impl<'a> BreachSolver<'a> {
             }            
 
             // Update cell usage
-            state.moves[current_move_index] = new_move;
-            state.buffer[current_move_index] = cell_ref.to_string();
-            state.used_cells.insert((row, col), true);
+            new_state.moves[current_move_index] = new_move;
+            new_state.buffer[current_move_index] = cell_ref.to_string();
+            new_state.used_cells.insert((row, col), true);
 
             
-            println!("{}", state.to_string());
+            // println!("{}", new_state.to_string());
             
             // Check all daemons for completion
-            let all_daemons_completed = state.daemons.iter().all(|daemon| matches!(daemon, DaemonMatchState::Completed));
+            let all_daemons_completed = new_state.daemons.iter().all(|daemon| matches!(daemon, DaemonMatchState::Completed));
             if all_daemons_completed {
                 // Push valid solution
-                solutions.push(state.moves.clone());
+                solutions.push(new_state.moves.clone());
                 if first_only {
                     // Stop searching for more solutions on first result
                     break;
                 }
             } else {
-                if state.move_count < self.puzzle.buffer_size {
+                if new_state.move_count < self.puzzle.buffer_size {
                     // Only if we can still move, recurse in depth with next move
-                    let mut rec_solutions = self.step(state, first_only);
+                    let mut rec_solutions = self.step(&new_state, first_only);
                     solutions.append(&mut rec_solutions);
                 }
             }
 
             // Reset used_cell before cycling on next cell
-            state.used_cells.insert((row, col), false);
+            new_state.used_cells.insert((row, col), false);
         }
 
         solutions
@@ -187,6 +201,8 @@ impl<'a> BreachSolver<'a> {
 
 #[cfg(test)]
 mod tests {
+    use opencv::core::Vec2i;
+
     use super::*;
     use crate::types::PuzzleMove;
     
@@ -225,8 +241,8 @@ mod tests {
             )
         };
         let solver = BreachSolver::new(&test_puzzle_1);
-        let solution = solver.solve();
-        assert!(matches!(solution, None));
+        let solution = solver.solve(SolverSearchMethod::FirstMatch);
+        assert!(solution.is_none());
     }
     
     #[test]
@@ -251,7 +267,16 @@ mod tests {
             )
         };
         let solver = BreachSolver::new(&test_puzzle_2);
-        let solution = solver.solve().unwrap();
+        let solutions = solver.solve_all();
+        let mapped_solutions: Vec<Vec<u32>> = solutions.iter().map(moves_to_u32_vec).collect();
+        assert_eq!(
+            mapped_solutions,
+            vec![
+                [0, 3, 4, 0, 2, 2, 3]
+            ]
+        );
+
+        let solution = solver.solve(SolverSearchMethod::Shortest).unwrap();
         assert_eq!(
             moves_to_u32_vec(&solution),
             vec![0, 3, 4, 0, 2, 2, 3]
@@ -280,7 +305,7 @@ mod tests {
             )
         };
         let solver = BreachSolver::new(&test_puzzle_2);
-        let solution = solver.solve().unwrap();
+        let solution = solver.solve(SolverSearchMethod::FirstMatch).unwrap();
         assert_eq!(
             moves_to_u32_vec(&solution),
             vec![0, 3, 4, 0, 2, 2, 3]
