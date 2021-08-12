@@ -500,6 +500,33 @@ mod tests {
     }
 
     #[test]
+    fn test_scan_puzzle_6_2() {
+        let test_screen = imread(FILE_TEST_6_2, ImreadModes::IMREAD_UNCHANGED as i32)
+            .expect(format!("File {} not found", FILE_TEST_6_2).as_str());
+        let puzzle = scan(&test_screen).unwrap();
+        #[rustfmt::skip]
+        assert_eq!(
+            puzzle.grid.cells,
+            vec![
+                "E9","55","E9","55","E9","55",
+                "BD","1C","7A","7A","55","E9",
+                "1C","55","7A","1C","1C","E9",
+                "7A","1C","7A","BD","BD","55",
+                "7A","55","1C","E9","55","7A",
+                "BD","1C","1C","55","55","7A",
+            ]
+        );
+        assert_eq!(
+            puzzle.daemons,
+            vec![
+                vec!["1C", "55", "1C"],
+                vec!["1C", "1C"],
+                vec!["1C", "55", "1C"]
+            ]
+        );
+    }
+
+    #[test]
     fn test_scan_daemons() {
         let test_screen = imread(FILE_TEST_4_DAEMONS, ImreadModes::IMREAD_GRAYSCALE as i32)
             .expect(format!("File {} not found", FILE_TEST_4_DAEMONS).as_str());
