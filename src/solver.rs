@@ -7,6 +7,9 @@ use crate::types::*;
 type CellCoord = (u32, u32);
 /// Pair containining a PuzzleMove and its target cell coordinate
 type PuzzleMoveWithCoord = (PuzzleMove, CellCoord);
+/// List of puzzle moves (aka solution)
+type PuzzleMoves = Vec<PuzzleMove>;
+
 
 #[derive(Clone, Copy)]
 enum DaemonMatchState {
@@ -20,7 +23,7 @@ struct SolutionState {
     /// Vector with current Buffer state
     buffer: Vec<String>,
     /// Vector with current sequence of puzzle moves
-    moves: Vec<PuzzleMove>,
+    moves: PuzzleMoves,
     /// Move count for current step state
     move_count: u32,
     /// Vector of daemon match length, where n-th element is the n-th daemon match length.
@@ -54,23 +57,21 @@ impl<'a> BreachSolver<'a> {
     pub(crate) fn new(puzzle: &'a Puzzle) -> BreachSolver<'a> {
         BreachSolver { puzzle }
     }
-    pub(crate) fn solve(&self) -> Option<Vec<u32>> {
+    pub(crate) fn solve(&self) -> Option<PuzzleMoves> {
         let mut state = SolutionState::new(&self.puzzle);
-        let solutions = self.step(&mut state, false);
-        /*
-        let solutions = this.step(this.puzzle.grid, daemonStatus, buffer, 0, true);
-        if (solutions) {
-        solutions = sortBy(solutions, (s) => s.length);
-        return solutions[0];
+        let mut solutions = self.step(&mut state, false);
+        // Sort solutions by length
+        solutions.sort_by_key(|solution| solution.len());
+        if let Some(solution) = solutions.get(0) {
+            return Some(solution.to_owned())
         }
-        */
         None
     }
 
-    fn step(&self, state: &mut SolutionState, first_only: bool) -> Vec<Vec<PuzzleMove>> {
+    fn step(&self, state: &mut SolutionState, first_only: bool) -> Vec<PuzzleMoves> {
         // Current buffer/move index on which we are iterating in current search step
         let current_move_index : usize = state.move_count.try_into().unwrap();
-        let mut solutions: Vec<Vec<PuzzleMove>> = Vec::new();
+        let mut solutions: Vec<PuzzleMoves> = Vec::new();
 
         // Get last move from state, handle implicit first move = Row(0) when state has no moves yet
         let last_move = if current_move_index == 0 {
@@ -80,6 +81,7 @@ impl<'a> BreachSolver<'a> {
         };
 
         // Search available moves on unused and valid cells
+        let next_move_type: PuzzleMoveType;
         let is_unused_cell = |(_, cell): &(PuzzleMove, CellCoord)| *state.used_cells.get(cell).unwrap_or(&false);
         let available_moves: Vec<PuzzleMoveWithCoord> = match state.next_move_type {
             PuzzleMoveType::SelectColumn => {
@@ -88,6 +90,7 @@ impl<'a> BreachSolver<'a> {
                 } else {
                     panic!("Expected Row move, but last move was a Column or None move");
                 };
+                next_move_type = PuzzleMoveType::SelectRow;
                 (0..self.puzzle.grid.cols)
                     .map(|col| (PuzzleMove::Column(col), (last_row_index, col)))
                     .filter(is_unused_cell)
@@ -99,6 +102,7 @@ impl<'a> BreachSolver<'a> {
                 } else {
                     panic!("Expected Column move, but last move was a Row or None move");
                 };
+                next_move_type = PuzzleMoveType::SelectColumn;
                 (0..self.puzzle.grid.cols)
                     .map(|row| (PuzzleMove::Row(row), (row, last_col_index)))
                     .filter(is_unused_cell)
@@ -108,6 +112,8 @@ impl<'a> BreachSolver<'a> {
 
         // Try each available move
         state.move_count += 1;
+        state.next_move_type = next_move_type;
+        
         for (new_move, (row, col)) in available_moves {
             let cell_ref = self.puzzle.grid.get_cell(row, col);
 
@@ -163,9 +169,19 @@ impl<'a> BreachSolver<'a> {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::types::PuzzleMove;
     
-    pub fn to_string_vector(v: Vec<&str>) -> Vec<String> {
+    fn to_string_vector(v: Vec<&str>) -> Vec<String> {
         v.iter().map(|s| s.to_string()).collect()
+    }
+
+    fn moves_to_u32_vec(moves: &PuzzleMoves) -> Vec<u32> {
+        moves.iter().filter_map(|m| {
+            match m {
+                &PuzzleMove::Column(i) | &PuzzleMove::Row(i) => Some(i),
+                &PuzzleMove::None => None
+            }
+        }).collect()
     }
 
     #[test]
@@ -190,8 +206,8 @@ mod tests {
             )
         };
         let solver = BreachSolver::new(&test_puzzle_1);
-        let solutions = solver.solve();
-        assert_eq!(solutions, None);
+        let solution = solver.solve();
+        assert!(matches!(solution, None));
     }
     
     #[test]
@@ -216,8 +232,11 @@ mod tests {
             )
         };
         let solver = BreachSolver::new(&test_puzzle_2);
-        let solution = solver.solve();
-        assert_eq!(solution, Some(vec![0, 3, 4, 0, 2, 2, 3]));
+        let solution = solver.solve().unwrap();
+        assert_eq!(
+            moves_to_u32_vec(&solution),
+            vec![0, 3, 4, 0, 2, 2, 3]
+        );
         // TODO: get buffer from solution
         // assert_eq!(solution_buffer, ["1C","55","55","55","1C","1C","BD"]);
     }
