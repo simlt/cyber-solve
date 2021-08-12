@@ -14,11 +14,30 @@ pub enum PuzzleMove {
 
 /// List of puzzle moves (aka solution)
 pub type PuzzleMoves = Vec<PuzzleMove>;
+/// row, col index pair for cell grid coordinate
+pub type CellCoord = (u32, u32);
 
 #[derive(Clone)]
 pub struct PuzzleSolution {
     pub buffer: Vec<String>,
     pub moves: PuzzleMoves,
+}
+impl PuzzleSolution {
+    pub fn to_coords(&self) -> Vec<CellCoord> {
+        use crate::types::PuzzleMove::{Column, Row};
+        let mut last_coord = (0, 0);
+        let mut coords = Vec::new();
+        for cell in self.moves.iter() {
+            let coord = match *cell {
+                Row(row) => (row, last_coord.1),
+                Column(col) => (last_coord.0, col),
+                PuzzleMove::None => break,
+            };
+            coords.push(coord);
+            last_coord = coord;
+        }
+        coords
+    }
 }
 impl std::fmt::Display for PuzzleSolution {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
@@ -35,7 +54,13 @@ pub struct PuzzleGrid {
 }
 
 impl PuzzleGrid {
-    pub fn new(rows: u32, cols: u32, cells: Vec<&str>) -> PuzzleGrid {
+    pub fn new(rows: u32, cols: u32) -> PuzzleGrid {
+        let mut cells = Vec::new();
+        cells.resize(std::convert::TryInto::try_into(rows * cols).unwrap(), String::from(""));
+        PuzzleGrid { rows, cols, cells }
+    }
+
+    pub fn from_cells(rows: u32, cols: u32, cells: Vec<&str>) -> PuzzleGrid {
         PuzzleGrid {
             rows,
             cols,
@@ -109,7 +134,8 @@ mod tests {
 
     #[test]
     fn grid() {
-        let grid = PuzzleGrid::new(
+        #[rustfmt::skip]
+        let grid = PuzzleGrid::from_cells(
             4,
             3,
             vec![

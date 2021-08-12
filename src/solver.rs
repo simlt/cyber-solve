@@ -2,8 +2,6 @@ use std::{collections::HashMap, convert::TryInto};
 
 use crate::types::*;
 
-/// row, col index pair for cell grid coordinate
-type CellCoord = (u32, u32);
 /// Pair containining a PuzzleMove and its target cell coordinate
 type PuzzleMoveWithCoord = (PuzzleMove, CellCoord);
 
@@ -203,6 +201,14 @@ impl<'a> BreachSolver<'a> {
 
         solutions
     }
+
+    pub fn to_grid(&self, solution: &PuzzleSolution) -> PuzzleGrid {
+        let mut grid = PuzzleGrid::new(self.puzzle.grid.rows, self.puzzle.grid.cols);
+        for (i, &(row, col)) in (*solution).to_coords().iter().enumerate() {
+            grid.set_cell(row, col, &i.to_string());
+        }
+        grid
+    }
 }
 
 #[cfg(test)]
@@ -228,6 +234,7 @@ mod tests {
 
     #[test]
     fn test_no_solution() {
+        #[rustfmt::skip]
         let test_puzzle_1: Puzzle = Puzzle {
             buffer_size: 8,
             daemons: vec![
@@ -235,7 +242,7 @@ mod tests {
                 to_string_vector(vec!["E9", "BD", "1C"]),
                 to_string_vector(vec!["1C", "55", "55", "BD"]),
             ],
-            grid: PuzzleGrid::new(
+            grid: PuzzleGrid::from_cells(
                 5,
                 5,
                 vec![
@@ -254,6 +261,7 @@ mod tests {
 
     #[test]
     fn test_1_solution() {
+        #[rustfmt::skip]
         let test_puzzle_2: Puzzle = Puzzle {
             buffer_size: 7,
             daemons: vec![
@@ -261,7 +269,7 @@ mod tests {
                 to_string_vector(vec!["55", "55", "55"]),
                 to_string_vector(vec!["1C", "1C", "BD"]),
             ],
-            grid: PuzzleGrid::new(
+            grid: PuzzleGrid::from_cells(
                 5,
                 5,
                 vec![
@@ -320,12 +328,13 @@ mod tests {
     // #[test]
     #[allow(dead_code)]
     fn test_debug_grid() {
+        #[rustfmt::skip]
         let test_puzzle_2: Puzzle = Puzzle {
             buffer_size: 10,
             daemons: vec![to_string_vector(vec![
                 "A1", "A2", "B2", "B3", "C3", "C4", "D4", "D5", "E5",
             ])],
-            grid: PuzzleGrid::new(
+            grid: PuzzleGrid::from_cells(
                 5,
                 5,
                 vec![

@@ -30,13 +30,4 @@ pub(crate) fn screenshot() -> Result<Mat, String> {
 pub(crate) fn screenshot() -> Result<Mat, String> {
     // Comment the following line to use a test image instead
     panic!("Unsupported platform for screenshot");
-
-    use opencv::imgcodecs::{imread, ImreadModes};
-
-    let screen = imread(
-        "assets/images/test_6x6.png",
-        ImreadModes::IMREAD_UNCHANGED as i32,
-    )
-    .expect("File test_6x6.png not found");
-    Ok(screen)
 }

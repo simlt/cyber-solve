@@ -14,6 +14,8 @@ use crate::ocr::recognize_cell;
 use crate::screenshot::*;
 use crate::types::*;
 
+// Debug functions
+#[allow(dead_code)]
 pub(crate) fn debug_show(name: &str, mat: &Mat) {
     let wait_time = 3000; // delay ms
     highgui::named_window(
@@ -26,8 +28,40 @@ pub(crate) fn debug_show(name: &str, mat: &Mat) {
     highgui::destroy_window(name).unwrap();
 }
 
+#[allow(dead_code)]
+fn debug_image() -> Result<Mat, String> {
+    let screen = imread(
+        "assets/images/test_6x6.png",
+        ImreadModes::IMREAD_UNCHANGED as i32,
+    )
+    .expect("File test_6x6.png not found");
+    Ok(screen)
+}
+
+#[allow(dead_code)]
+fn debug_contours(img: &Mat, rects: &Vec<cv::Rect>) {
+    let green_rgba = cv::Scalar::new(0.0, 255.0, 0.0, 255.0);
+    let mut contours = Mat::default();
+    imgproc::cvt_color(&img, &mut contours, imgproc::COLOR_GRAY2RGBA, 0).unwrap();
+    for rect in rects {
+        imgproc::rectangle(
+            &mut contours,
+            rect.to_owned(),
+            green_rgba,
+            2,
+            imgproc::FILLED,
+            0,
+        )
+        .unwrap();
+    }
+    // Draw debug contours
+    debug_show("contours", &contours);
+}
+
 pub(crate) fn capture_and_scan() -> Result<Puzzle, String> {
     let screen: cv::Mat = screenshot().expect("Failed to capture screenshot");
+    // Use the following line to use debug image instead of screenshot
+    // let screen: cv::Mat = debug_image().unwrap();
     let result = scan(&screen);
     result
 }
@@ -131,25 +165,6 @@ struct CellScanInfo {
     rows: u32,
     cols: u32,
     cells: Vec<cv::Rect>,
-}
-
-fn debug_contours(img: &Mat, rects: &Vec<cv::Rect>) {
-    let green_rgba = cv::Scalar::new(0.0, 255.0, 0.0, 255.0);
-    let mut contours = Mat::default();
-    imgproc::cvt_color(&img, &mut contours, imgproc::COLOR_GRAY2RGBA, 0).unwrap();
-    for rect in rects {
-        imgproc::rectangle(
-            &mut contours,
-            rect.to_owned(),
-            green_rgba,
-            2,
-            imgproc::FILLED,
-            0,
-        )
-        .unwrap();
-    }
-    // Draw debug contours
-    debug_show("contours", &contours);
 }
 
 fn get_contour_rects(img: &Mat, area_threshold: i32) -> Vec<cv::Rect> {
@@ -435,6 +450,7 @@ mod tests {
         let test_screen = imread(FILE_TEST_5, ImreadModes::IMREAD_UNCHANGED as i32)
             .expect(format!("File {} not found", FILE_TEST_5).as_str());
         let puzzle = scan(&test_screen).unwrap();
+        #[rustfmt::skip]
         assert_eq!(
             puzzle.grid.cells,
             vec![
@@ -452,6 +468,7 @@ mod tests {
         let test_screen = imread(FILE_TEST_6, ImreadModes::IMREAD_UNCHANGED as i32)
             .expect(format!("File {} not found", FILE_TEST_6).as_str());
         let puzzle = scan(&test_screen).unwrap();
+        #[rustfmt::skip]
         assert_eq!(
             puzzle.grid.cells,
             vec![
