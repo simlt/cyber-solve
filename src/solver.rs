@@ -49,6 +49,16 @@ impl SolutionState {
     }
 }
 
+impl std::fmt::Display for SolutionState {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.write_str(&format!("\n#{} next: {:?}  {:?}\n", self.move_count, self.next_move_type, self.buffer))?;
+        f.write_str(&format!("moves: {:?}\n", self.moves))?;
+        f.write_str(&format!("daemons: {:?}\n", self.daemons))?;
+        f.write_str(&format!("used_cells: {:?}\n", self.used_cells))?;
+        Ok(())
+    }
+}
+
 pub(crate) struct BreachSolver<'a> {
     puzzle: &'a Puzzle,
 }
@@ -148,7 +158,7 @@ impl<'a> BreachSolver<'a> {
             state.used_cells.insert((row, col), true);
 
             
-            // println!("{:?}", state);
+            println!("{}", state.to_string());
             
             // Check all daemons for completion
             let all_daemons_completed = state.daemons.iter().all(|daemon| matches!(daemon, DaemonMatchState::Completed));
@@ -237,6 +247,35 @@ mod tests {
                     "E9","55","1C","BD","1C",
                     "55","E9","1C","1C","55",
                     "1C","55","BD","55","1C",
+                ],
+            )
+        };
+        let solver = BreachSolver::new(&test_puzzle_2);
+        let solution = solver.solve().unwrap();
+        assert_eq!(
+            moves_to_u32_vec(&solution),
+            vec![0, 3, 4, 0, 2, 2, 3]
+        );
+        // TODO: get buffer from solution
+        // assert_eq!(solution_buffer, ["1C","55","55","55","1C","1C","BD"]);
+    }
+
+    #[test]
+    fn test_debug_grid() {
+        let test_puzzle_2: Puzzle = Puzzle {
+            buffer_size: 10,
+            daemons: vec![
+                to_string_vector(vec!["A1","A2","B2","B3","C3","C4","D4","D5","E5"]),
+            ],
+            grid: PuzzleGrid::new(
+                5,
+                5,
+                vec![
+                    "A1","B1","C1","D1","E1",
+                    "A2","B2","C2","D2","E2",
+                    "A3","B3","C3","D3","E3",
+                    "A4","B4","C4","D4","E4",
+                    "A5","B5","C5","D5","E5",
                 ],
             )
         };
