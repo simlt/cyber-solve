@@ -4,12 +4,14 @@ pub struct PuzzleGrid {
     pub cells: Vec<String>,
 }
 
+/// Defines which move is being selected: SelectRow means the column is fixed and a row can be chosen
+#[derive(Debug)]
 pub enum PuzzleMoveType {
     SelectRow,
     SelectColumn,
 }
 
-#[derive(Copy, Clone)]
+#[derive(Debug, Copy, Clone)]
 pub enum PuzzleMove {
     None,
     Row(u32),

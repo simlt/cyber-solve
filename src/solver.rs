@@ -11,14 +11,14 @@ type PuzzleMoveWithCoord = (PuzzleMove, CellCoord);
 type PuzzleMoves = Vec<PuzzleMove>;
 
 
-#[derive(Clone, Copy)]
+#[derive(Debug, Clone, Copy)]
 enum DaemonMatchState {
     Completed,
     Partial(usize),
 }
 
 
-#[derive()]
+#[derive(Debug)]
 struct SolutionState {
     /// Vector with current Buffer state
     buffer: Vec<String>,
@@ -82,7 +82,12 @@ impl<'a> BreachSolver<'a> {
 
         // Search available moves on unused and valid cells
         let next_move_type: PuzzleMoveType;
-        let is_unused_cell = |(_, cell): &(PuzzleMove, CellCoord)| *state.used_cells.get(cell).unwrap_or(&false);
+        let is_unused_cell = |(_, cell): &(PuzzleMove, CellCoord)| {
+            if let Some(used) = state.used_cells.get(cell) {
+                return !*used
+            }
+            true
+        };
         let available_moves: Vec<PuzzleMoveWithCoord> = match state.next_move_type {
             PuzzleMoveType::SelectColumn => {
                 let last_row_index = if let PuzzleMove::Row(index) = last_move {
@@ -110,10 +115,11 @@ impl<'a> BreachSolver<'a> {
             }
         };
 
-        // Try each available move
+        // Update move state
         state.move_count += 1;
         state.next_move_type = next_move_type;
         
+        // Try each available move
         for (new_move, (row, col)) in available_moves {
             let cell_ref = self.puzzle.grid.get_cell(row, col);
 
@@ -141,6 +147,9 @@ impl<'a> BreachSolver<'a> {
             state.buffer[current_move_index] = cell_ref.to_string();
             state.used_cells.insert((row, col), true);
 
+            
+            // println!("{:?}", state);
+            
             // Check all daemons for completion
             let all_daemons_completed = state.daemons.iter().all(|daemon| matches!(daemon, DaemonMatchState::Completed));
             if all_daemons_completed {
