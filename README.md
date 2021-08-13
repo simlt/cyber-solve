@@ -3,11 +3,14 @@
 ## Windows
 
 ``` sh
-# Opencv deps
-choco install llvm opencv
+# Opencv deps through chocolatey
+choco install llvm # opencv 
 
+# OR just use vcpkg for opencv
 # tessless deps: install vcpkg, then from the vcpkg folder run
-vcpkg install tesseract:x64-windows-md
+cd C:\src\win32\vcpkg
+# lz4 is a dep of opencv4[contrib]
+.\vcpkg install --triplet=x64-windows-static-md lz4 tesseract opencv4 # opencv4[contrib,nonfree] freetype 
 ```
 
 ## Debian/Ubuntu

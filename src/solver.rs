@@ -205,7 +205,7 @@ impl<'a> BreachSolver<'a> {
     pub fn to_grid(&self, solution: &PuzzleSolution) -> PuzzleGrid {
         let mut grid = PuzzleGrid::new(self.puzzle.grid.rows, self.puzzle.grid.cols);
         for (i, &(row, col)) in (*solution).to_coords().iter().enumerate() {
-            grid.set_cell(row, col, &(i+1).to_string());
+            grid.set_cell(row, col, &(i + 1).to_string());
         }
         grid
     }

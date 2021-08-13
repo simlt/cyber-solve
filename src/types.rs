@@ -56,15 +56,18 @@ pub struct PuzzleGrid {
 impl PuzzleGrid {
     pub fn new(rows: u32, cols: u32) -> PuzzleGrid {
         let mut cells = Vec::new();
-        cells.resize(std::convert::TryInto::try_into(rows * cols).unwrap(), String::from(""));
+        cells.resize(
+            std::convert::TryInto::try_into(rows * cols).unwrap(),
+            String::from(""),
+        );
         PuzzleGrid { rows, cols, cells }
     }
 
-    pub fn from_cells(rows: u32, cols: u32, cells: Vec<&str>) -> PuzzleGrid {
+    pub fn from_cells<S: Into<String>>(rows: u32, cols: u32, cells: Vec<S>) -> PuzzleGrid {
         PuzzleGrid {
             rows,
             cols,
-            cells: cells.iter().map(|s| s.to_string()).collect(),
+            cells: cells.into_iter().map(|s| s.into()).collect(),
         }
     }
 

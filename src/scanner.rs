@@ -307,7 +307,7 @@ fn detect_grid(grey: &Mat) -> Result<CellScanInfo, String> {
 fn detect_daemon_size(grey: &Mat, roi: &cv::Rect) -> Result<Option<CellScanInfo>, String> {
     // Blur grid then apply threshold to find cells
     let gaussian_threshold = cfg_i32("opencv.detect_daemon_threshold");
-    let daemon_min_length= cfg_i32("daemons.min_length").try_into().unwrap();
+    let daemon_min_length = cfg_i32("daemons.min_length").try_into().unwrap();
     let mut blur = Mat::default();
     let blur_kernel = cv::Size {
         width: 35,
@@ -369,7 +369,7 @@ fn scan_daemons(img: &Mat) -> Result<Vec<PuzzleDaemon>, String> {
         let height = row.bottom - row.top;
         let daemon_roi = cv::Rect::new(daemon_cfg.left, row.top, max_width, height);
         let detect_result = detect_daemon_size(img, &daemon_roi).unwrap();
-        if let Some (cell_info) = detect_result {
+        if let Some(cell_info) = detect_result {
             println!("Daemon size detected: {}", cell_info.cols);
             // Extract sequence cells
             let daemon: PuzzleDaemon = cell_info
