@@ -35,7 +35,7 @@ impl Overlay {
     }
 
     pub(crate) fn show(&mut self, grid: &PuzzleGrid) -> () {
-        let x = 800;
+        let x = 852;
         let y = 715;
         let image_width = 500;
         let image_height = 500;
@@ -68,10 +68,6 @@ impl Overlay {
         let assets_bin = parent_dir.join("assets/bin").canonicalize().unwrap();
         let overlay_exe_path = assets_bin.join("overlay.exe");
 
-        if let Err(err) = self.kill_overlay_process() {
-            println!("Could not kill child process. {}", err.to_string());
-        }
-
         // println!("{}", assets_bin.display());
         let process = Command::new(overlay_exe_path)
             .args(&args)
@@ -85,6 +81,12 @@ impl Overlay {
             path
         );
 
+        // Kill old child process
+        if let Err(err) = self.kill_overlay_process() {
+            println!("Could not kill child process. {}", err.to_string());
+        }
+
+        // Update current child process
         self.child_process = Some(process);
     }
 
@@ -119,7 +121,7 @@ fn draw_grid(img: &mut Mat, grid: &PuzzleGrid) -> () {
     let height = img.rows();
     let width = img.cols();
     let cyber_yellow = Color::rgba(0xcf, 0xed, 0x56, 0xff).to_bgra(); // #cfed56
-    let thickness = 3;
+    let thickness = 2;
     let line_type = imgproc::LineTypes::LINE_8 as i32;
 
     // Grid size
@@ -155,9 +157,9 @@ fn draw_grid(img: &mut Mat, grid: &PuzzleGrid) -> () {
     let first_cell_origin = grid_top_left + cv::Point::new(cell_width, cell_height) / 2;
     // TODO: use better font
     // Original font should be Eurocine Narrow. Rajdhani or Noto Sans are a similar alternative
-    let font_face = imgproc::FONT_HERSHEY_DUPLEX;
+    let font_face = imgproc::FONT_HERSHEY_SIMPLEX;
     let font_scale = 2.0f64;
-    let thickness = 1;
+    let thickness = 2;
     let text_line_type = imgproc::LineTypes::LINE_AA as i32;
     for row in 0..rows {
         let y_offset = lerp_i(0, grid_height - cell_height, row as f64 / (rows - 1) as f64);

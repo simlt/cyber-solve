@@ -75,30 +75,42 @@ pub(crate) fn scan<'screen, 'puzzle>(screen: &'screen Mat) -> Result<Puzzle, Str
     imgproc::cvt_color(&screen, &mut grey, imgproc::COLOR_BGR2GRAY, 0).unwrap();
     // debug_show(&grey);
     // Detect buffer size
-    let buffer_size = detect_buffer_size(&grey).expect("Failed to detect buffer size");
+    let buffer_size_result = detect_buffer_size(&grey);
     match detect_buffer_size(&grey) {
         Ok(buffer_size) if buffer_size > 0 => (),
         _ => {
             return Err("Failed to detect buffer size".to_string());
         }
     }
+    let buffer_size = buffer_size_result.unwrap();
     println!("Buffer size detected: {}", buffer_size);
 
     // Detect grid info
-    let grid_info = detect_grid(&grey).expect("Failed to detect grid info");
+    let grid_info_result = detect_grid(&grey);
+    if let Err(error) = grid_info_result {
+        return Err(format!("Failed to detect grid info: {}", error));
+    }
+    let grid_info = grid_info_result.unwrap();
     println!("Grid size detected: {}x{}", grid_info.rows, grid_info.cols);
 
     // Process cell data
-    let grid_data = process_grid(&grey, &grid_info).expect("Failed to process grid data");
+    let grid_data = process_grid(&grey, &grid_info);
+    if let Err(error) = grid_data {
+        return Err(format!("Failed to process grid data: {}", error));
+    }
     let grid = PuzzleGrid {
         rows: grid_info.rows,
         cols: grid_info.cols,
-        cells: grid_data,
+        cells: grid_data.unwrap(),
     };
     println!("Grid:\n{}", grid.to_string());
 
     // Detect and process daemons
-    let daemons = scan_daemons(&grey).expect("Failed to process daemon data");
+    let daemons_result = scan_daemons(&grey);
+    if let Err(error) = daemons_result {
+        return Err(format!("Failed to process daemon data: {}", error));
+    }
+    let daemons = daemons_result.unwrap();
 
     let puzzle = Puzzle {
         buffer_size,
@@ -378,13 +390,15 @@ fn scan_daemons(img: &Mat) -> Result<Vec<PuzzleDaemon>, String> {
         if let Some(cell_info) = detect_result {
             println!("Daemon size detected: {}", cell_info.cols);
             // Extract sequence cells
-            let daemon: PuzzleDaemon = cell_info
+            let daemon_result: Result<PuzzleDaemon, String> = cell_info
                 .cells
                 .iter()
-                .map(|cell| extract_cell(&img, &cell).unwrap())
+                .map(|cell| extract_cell(&img, &cell))
                 .collect();
-            // let daemon = cells_txt_result.unwrap();
-            daemons.push(daemon);
+            match daemon_result {
+                Ok(daemon) => daemons.push(daemon),
+                Err(error) => return Err(error),
+            }
         }
     }
     Ok(daemons)

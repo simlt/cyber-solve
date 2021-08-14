@@ -13,7 +13,7 @@ mod utils;
 fn main() {
     let mut overlay = overlay::Overlay::new();
     let five_secs = time::Duration::from_secs(5);
-    let fifteen_secs = time::Duration::from_secs(15);
+    let thirty_secs = time::Duration::from_secs(30);
 
     loop {
         match scanner::capture_and_scan() {
@@ -26,7 +26,7 @@ fn main() {
                 } else {
                     println!("No solution found");
                 }
-                thread::sleep(fifteen_secs);
+                thread::sleep(thirty_secs);
             }
             Err(msg) => {
                 println!("Scan failed: {}", &msg);
