@@ -1,18 +1,21 @@
-use crate::scanner::debug_show;
+use std::time::SystemTime;
+
 use crate::types::PuzzleGrid;
 use crate::utils::lerp_i;
 use crate::utils::Color;
 use opencv::core as cv;
+use opencv::imgcodecs::imwrite;
 use opencv::imgproc;
 use opencv::prelude::*;
+use tempfile::tempdir;
 
 pub(crate) fn show(grid: &PuzzleGrid, (x, y): (i32, i32), (height, width): (i32, i32)) -> () {
     // let bg_color = Color::rgba(255,255,255,0).to_bgra();
     let bg_color = Color::rgba(0, 0, 0, 0).to_bgra();
     let mut img = Mat::new_rows_cols_with_default(height, width, cv::CV_8UC4, bg_color).unwrap();
     draw_grid(&mut img, &grid);
-    // save_image();
-    // load_overlay_image();
+    let path = save_image(&img);
+    // load_overlay_image(&path);
 }
 
 fn draw_grid(img: &mut Mat, grid: &PuzzleGrid) -> () {
@@ -56,7 +59,7 @@ fn draw_grid(img: &mut Mat, grid: &PuzzleGrid) -> () {
     let cell_height = ((grid_height) as f64 / (rows) as f64).round() as i32;
     let first_cell_origin = grid_top_left + cv::Point::new(cell_width, cell_height) / 2;
     let font_face = imgproc::FONT_HERSHEY_DUPLEX;
-    let font_scale = 2.5f64;
+    let font_scale = 2.0f64;
     let thickness = 1;
     let text_line_type = imgproc::LineTypes::LINE_AA as i32;
     for row in 0..rows {
@@ -86,7 +89,22 @@ fn draw_grid(img: &mut Mat, grid: &PuzzleGrid) -> () {
             .unwrap();
         }
     }
-    debug_show("overlay grid cells", img);
+    // debug_show("overlay grid cells", img);
+}
+
+fn save_image(img: &Mat) -> () {
+    // Save to png image to support alpha channel
+    let dir = tempdir().expect("Failed to create temp dir");
+    let now = SystemTime::now()
+        .duration_since(SystemTime::UNIX_EPOCH)
+        .unwrap();
+    let path = dir
+        .path()
+        .join(format!("cybersolve-overlay-{}.png", now.as_secs()));
+    let path_str = path.to_str().unwrap();
+    let imwrite_flags = cv::Vector::new();
+    imwrite(&path_str, img, &imwrite_flags).expect("Failed to write image file");
+    println!("Overlay image saved at \"{}\"", &path_str);
 }
 
 #[cfg(test)]
@@ -100,6 +118,6 @@ mod tests {
         let cells: Vec<String> = (0..size * size).map(|i| i.to_string().to_owned()).collect();
         let grid = PuzzleGrid::from_cells(size, size, cells);
 
-        show(&grid, (100, 100), (600, 600));
+        show(&grid, (100, 100), (400, 600));
     }
 }

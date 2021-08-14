@@ -397,7 +397,7 @@ fn process_grid(grey: &Mat, grid_info: &CellScanInfo) -> Result<Vec<String>, Str
 
 fn extract_cell(img: &Mat, cell: &cv::Rect) -> Result<String, String> {
     // Helper map to fix most common OCR mistakes
-    let correction_map: HashMap<&str, &str> = [("BO", "BD"), ("C", "1C"), ("TA", "7A")]
+    let correction_map: HashMap<&str, &str> = [("BO", "BD"), ("C", "1C"), ("1CC", "1C"), ("TA", "7A")]
         .iter()
         .cloned()
         .collect();
