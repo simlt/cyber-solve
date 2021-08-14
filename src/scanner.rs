@@ -76,6 +76,12 @@ pub(crate) fn scan<'screen, 'puzzle>(screen: &'screen Mat) -> Result<Puzzle, Str
     // debug_show(&grey);
     // Detect buffer size
     let buffer_size = detect_buffer_size(&grey).expect("Failed to detect buffer size");
+    match detect_buffer_size(&grey) {
+        Ok(buffer_size) if buffer_size > 0 => (),
+        _ => {
+            return Err("Failed to detect buffer size".to_string());
+        }
+    }
     println!("Buffer size detected: {}", buffer_size);
 
     // Detect grid info
@@ -397,10 +403,11 @@ fn process_grid(grey: &Mat, grid_info: &CellScanInfo) -> Result<Vec<String>, Str
 
 fn extract_cell(img: &Mat, cell: &cv::Rect) -> Result<String, String> {
     // Helper map to fix most common OCR mistakes
-    let correction_map: HashMap<&str, &str> = [("BO", "BD"), ("C", "1C"), ("1CC", "1C"), ("TA", "7A")]
-        .iter()
-        .cloned()
-        .collect();
+    let correction_map: HashMap<&str, &str> =
+        [("BO", "BD"), ("C", "1C"), ("1CC", "1C"), ("TA", "7A")]
+            .iter()
+            .cloned()
+            .collect();
     let valid_codes = cfg_str_vec("valid_codes");
 
     let roi = Mat::roi(img, *cell).unwrap();

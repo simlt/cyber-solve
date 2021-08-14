@@ -1,3 +1,7 @@
+use std::env::current_dir;
+use std::io::Error;
+use std::process::Child;
+use std::process::Command;
 use std::time::SystemTime;
 
 use crate::types::PuzzleGrid;
@@ -7,15 +11,106 @@ use opencv::core as cv;
 use opencv::imgcodecs::imwrite;
 use opencv::imgproc;
 use opencv::prelude::*;
-use tempfile::tempdir;
+use tempfile;
 
-pub(crate) fn show(grid: &PuzzleGrid, (x, y): (i32, i32), (height, width): (i32, i32)) -> () {
-    // let bg_color = Color::rgba(255,255,255,0).to_bgra();
-    let bg_color = Color::rgba(0, 0, 0, 0).to_bgra();
-    let mut img = Mat::new_rows_cols_with_default(height, width, cv::CV_8UC4, bg_color).unwrap();
-    draw_grid(&mut img, &grid);
-    let path = save_image(&img);
-    // load_overlay_image(&path);
+pub(crate) struct Overlay {
+    pub child_process: Option<Child>,
+    tmp_dir: tempfile::TempDir,
+}
+
+impl Drop for Overlay {
+    fn drop(&mut self) {
+        // Make sure to kill child process on exit, ignore errors
+        let _ = self.kill_overlay_process();
+    }
+}
+
+impl Overlay {
+    pub(crate) fn new() -> Overlay {
+        let tmp_dir = tempfile::tempdir().expect("Failed to create temp dir");
+        Overlay {
+            tmp_dir,
+            child_process: None,
+        }
+    }
+
+    pub(crate) fn show(&mut self, grid: &PuzzleGrid) -> () {
+        let x = 800;
+        let y = 715;
+        let image_width = 500;
+        let image_height = 500;
+        let overlay_width = 215;
+        let overlay_height = 215;
+
+        // let bg_color = Color::rgba(255,255,255,0).to_bgra();
+        let bg_color = Color::rgba(0, 0, 0, 0).to_bgra();
+        let mut img =
+            Mat::new_rows_cols_with_default(image_height, image_width, cv::CV_8UC4, bg_color)
+                .unwrap();
+        draw_grid(&mut img, &grid);
+        let path = self.save_image(&img);
+        self.load_overlay_image(&path, x, y, overlay_width, overlay_height);
+    }
+
+    pub(crate) fn hide(&mut self) -> () {
+        let _ = self.kill_overlay_process();
+    }
+
+    fn load_overlay_image(&mut self, path: &str, x: i32, y: i32, width: i32, height: i32) -> () {
+        let args = [
+            path,
+            &x.to_string(),
+            &y.to_string(),
+            &width.to_string(),
+            &height.to_string(),
+        ];
+        let parent_dir = current_dir().unwrap();
+        let assets_bin = parent_dir.join("assets/bin").canonicalize().unwrap();
+        let overlay_exe_path = assets_bin.join("overlay.exe");
+
+        if let Err(err) = self.kill_overlay_process() {
+            println!("Could not kill child process. {}", err.to_string());
+        }
+
+        // println!("{}", assets_bin.display());
+        let process = Command::new(overlay_exe_path)
+            .args(&args)
+            .current_dir(assets_bin)
+            .spawn()
+            .expect("Failed to start overlay process");
+
+        println!(
+            "Started ovelay child process pid: {} with image: {}",
+            process.id(),
+            path
+        );
+
+        self.child_process = Some(process);
+    }
+
+    fn kill_overlay_process(&mut self) -> Result<(), Error> {
+        if let Some(process) = &mut self.child_process {
+            process.kill()?;
+        }
+        Ok(())
+    }
+
+    fn save_image(&self, img: &Mat) -> String {
+        // Save to png image to support alpha channel
+        let now = SystemTime::now()
+            .duration_since(SystemTime::UNIX_EPOCH)
+            .unwrap();
+        let path = self
+            .tmp_dir
+            .path()
+            .join(format!("cybersolve-overlay-{}.png", now.as_secs()));
+        let path_str = path.to_str().unwrap();
+        let imwrite_flags = cv::Vector::new();
+        imwrite(&path_str, img, &imwrite_flags).expect("Failed to write image file");
+        println!("Overlay image saved at \"{}\"", &path_str);
+
+        path_str.to_owned()
+    }
 }
 
 fn draw_grid(img: &mut Mat, grid: &PuzzleGrid) -> () {
@@ -58,6 +153,8 @@ fn draw_grid(img: &mut Mat, grid: &PuzzleGrid) -> () {
     let cell_width = ((grid_width) as f64 / (cols) as f64).round() as i32;
     let cell_height = ((grid_height) as f64 / (rows) as f64).round() as i32;
     let first_cell_origin = grid_top_left + cv::Point::new(cell_width, cell_height) / 2;
+    // TODO: use better font
+    // Original font should be Eurocine Narrow. Rajdhani or Noto Sans are a similar alternative
     let font_face = imgproc::FONT_HERSHEY_DUPLEX;
     let font_scale = 2.0f64;
     let thickness = 1;
@@ -92,21 +189,6 @@ fn draw_grid(img: &mut Mat, grid: &PuzzleGrid) -> () {
     // debug_show("overlay grid cells", img);
 }
 
-fn save_image(img: &Mat) -> () {
-    // Save to png image to support alpha channel
-    let dir = tempdir().expect("Failed to create temp dir");
-    let now = SystemTime::now()
-        .duration_since(SystemTime::UNIX_EPOCH)
-        .unwrap();
-    let path = dir
-        .path()
-        .join(format!("cybersolve-overlay-{}.png", now.as_secs()));
-    let path_str = path.to_str().unwrap();
-    let imwrite_flags = cv::Vector::new();
-    imwrite(&path_str, img, &imwrite_flags).expect("Failed to write image file");
-    println!("Overlay image saved at \"{}\"", &path_str);
-}
-
 #[cfg(test)]
 mod tests {
     use crate::overlay::*;
@@ -114,10 +196,12 @@ mod tests {
 
     #[test]
     fn test_overlay() {
+        // Make 1,2,...,25 test grid
         let size = 5;
         let cells: Vec<String> = (0..size * size).map(|i| i.to_string().to_owned()).collect();
         let grid = PuzzleGrid::from_cells(size, size, cells);
 
-        show(&grid, (100, 100), (400, 600));
+        let mut overlay = Overlay::new();
+        overlay.show(&grid);
     }
 }
