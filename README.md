@@ -3,14 +3,22 @@
 ## Windows
 
 ``` sh
-# Opencv deps through chocolatey
-choco install llvm # opencv 
+# Install llvm through chocolatey
+choco install llvm
 
-# OR just use vcpkg for opencv
+# Then use vcpkg for opencv and its deps
 # tessless deps: install vcpkg, then from the vcpkg folder run
 cd C:\src\win32\vcpkg
-# lz4 is a dep of opencv4[contrib]
-.\vcpkg install --triplet=x64-windows-static-md lz4 tesseract opencv4 # opencv4[contrib,nonfree] freetype 
+
+
+# [optional] To support freetype opencv module https://docs.opencv.org/4.5.3/d4/dfc/group__freetype.html install the following before installing opencv4
+.\vcpkg install --triplet=x64-windows-static-md freetype harfbuzz
+# then open the file .\vcpkg\ports\opencv4\portfile.cmake, and add a line with the option
+# -DWITH_FREETYPE=ON
+# inside of vcpkg_cmake_configure OPTION section
+
+# Now, install opencv4
+.\vcpkg install --triplet=x64-windows-static-md tesseract opencv4[contrib,nonfree] # freetype 
 ```
 
 ## Debian/Ubuntu
@@ -37,7 +45,7 @@ brew install tesseract leptonica
 
 Manually download the following files:
 
-`deps\opencv_world412.dll`
+`deps\opencv_world412.dll` (only for dynamic library builds)
 `assets\tesseract\eng.traineddata`
 
-NOTE: To run the executable, it is necessary to place a copy of the dll in the same folder of the executable to be run.
+NOTE: to run the executable when using dynamic library builds, it is necessary to place a copy of the dll in the same folder of the executable to be run.

@@ -14,3 +14,4 @@ leptess = "0.13.0"
 # Enable "clang-runtime" to avoid `libclang` shared library is not loaded on this thread
 opencv = { version = "0.53.1", features = ["clang-runtime"] }
 serde = { version = "1.0.127", features = ["derive"] }
+tempfile = "3.2.0"
