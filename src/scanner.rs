@@ -10,7 +10,7 @@ use std::convert::TryInto;
 use std::num::TryFromIntError;
 
 use crate::configuration::{cfg_get, cfg_i32, cfg_str_vec, DaemonCfg};
-use crate::ocr::recognize_cell;
+use crate::ocr::Ocr;
 use crate::screenshot::*;
 use crate::types::*;
 
@@ -30,11 +30,8 @@ pub(crate) fn debug_show(name: &str, mat: &Mat) {
 
 #[allow(dead_code)]
 fn debug_image() -> Result<Mat, String> {
-    let screen = imread(
-        "test/test_6x6.png",
-        ImreadModes::IMREAD_UNCHANGED as i32,
-    )
-    .expect("File test_6x6.png not found");
+    let screen = imread("test/test_6x6.png", ImreadModes::IMREAD_UNCHANGED as i32)
+        .expect("File test_6x6.png not found");
     Ok(screen)
 }
 
@@ -66,11 +63,14 @@ pub(crate) fn capture_and_scan() -> Result<Puzzle, String> {
     result
 }
 
-pub(crate) fn scan<'screen, 'puzzle>(screen: &'screen Mat) -> Result<Puzzle, String> {
-    let mut grey = Mat::default();
+pub(crate) fn scan(screen: &Mat) -> Result<Puzzle, String> {
+    let mut ocr = Ocr::new();
+
     // convert to greyscale
+    let mut grey = Mat::default();
     imgproc::cvt_color(&screen, &mut grey, imgproc::COLOR_BGR2GRAY, 0).unwrap();
     // debug_show(&grey);
+
     // Detect buffer size
     let buffer_size_result = detect_buffer_size(&grey);
     match detect_buffer_size(&grey) {
@@ -91,7 +91,7 @@ pub(crate) fn scan<'screen, 'puzzle>(screen: &'screen Mat) -> Result<Puzzle, Str
     println!("Grid size detected: {}x{}", grid_info.rows, grid_info.cols);
 
     // Process cell data
-    let grid_data = process_grid(&grey, &grid_info);
+    let grid_data = process_grid(&mut ocr, &grey, &grid_info);
     if let Err(error) = grid_data {
         return Err(format!("Failed to process grid data: {}", error));
     }
@@ -103,7 +103,7 @@ pub(crate) fn scan<'screen, 'puzzle>(screen: &'screen Mat) -> Result<Puzzle, Str
     println!("Grid:\n{}", grid.to_string());
 
     // Detect and process daemons
-    let daemons_result = scan_daemons(&grey);
+    let daemons_result = scan_daemons(&mut ocr, &grey);
     if let Err(error) = daemons_result {
         return Err(format!("Failed to process daemon data: {}", error));
     }
@@ -372,7 +372,7 @@ fn detect_daemon_size(grey: &Mat, roi: &cv::Rect) -> Result<Option<CellScanInfo>
     Ok(Some(grid_info))
 }
 
-fn scan_daemons(img: &Mat) -> Result<Vec<PuzzleDaemon>, String> {
+fn scan_daemons(ocr: &mut Ocr, img: &Mat) -> Result<Vec<PuzzleDaemon>, String> {
     let daemon_cfg: DaemonCfg = cfg_get("daemons");
     let rows = daemon_cfg.rows;
     let cell_width = daemon_cfg.cell_width;
@@ -390,7 +390,7 @@ fn scan_daemons(img: &Mat) -> Result<Vec<PuzzleDaemon>, String> {
             let daemon_result: Result<PuzzleDaemon, String> = cell_info
                 .cells
                 .iter()
-                .map(|cell| extract_cell(&img, &cell))
+                .map(|cell| extract_cell(ocr, &img, &cell))
                 .collect();
             match daemon_result {
                 Ok(daemon) => daemons.push(daemon),
@@ -401,18 +401,22 @@ fn scan_daemons(img: &Mat) -> Result<Vec<PuzzleDaemon>, String> {
     Ok(daemons)
 }
 
-fn process_grid(grey: &Mat, grid_info: &CellScanInfo) -> Result<Vec<String>, String> {
+fn process_grid(
+    ocr: &mut Ocr,
+    grey: &Mat,
+    grid_info: &CellScanInfo,
+) -> Result<Vec<String>, String> {
     // debug_contours(grey, &grid_info.cells);
 
     let cells_txt: Result<Vec<String>, String> = grid_info
         .cells
         .iter()
-        .map(|cell| extract_cell(&grey, &cell))
+        .map(|cell| extract_cell(ocr, &grey, &cell))
         .collect();
     cells_txt
 }
 
-fn extract_cell(img: &Mat, cell: &cv::Rect) -> Result<String, String> {
+fn extract_cell(ocr: &mut Ocr, img: &Mat, cell: &cv::Rect) -> Result<String, String> {
     // Helper map to fix most common OCR mistakes
     let correction_map: HashMap<&str, &str> =
         [("BO", "BD"), ("C", "1C"), ("1CC", "1C"), ("TA", "7A")]
@@ -422,7 +426,9 @@ fn extract_cell(img: &Mat, cell: &cv::Rect) -> Result<String, String> {
     let valid_codes = cfg_str_vec("valid_codes");
 
     let roi = Mat::roi(img, *cell).unwrap();
-    let mut text = recognize_cell(&roi).expect("Failed to recognize grid cell");
+    let mut text = ocr
+        .recognize_cell(&roi)
+        .expect("Failed to recognize grid cell");
     text = correction_map
         .get(text.as_str())
         .map_or(text, |text| (*text).to_owned());
@@ -554,7 +560,8 @@ mod tests {
     fn test_scan_daemons() {
         let test_screen = imread(FILE_TEST_4_DAEMONS, ImreadModes::IMREAD_GRAYSCALE as i32)
             .expect(format!("File {} not found", FILE_TEST_4_DAEMONS).as_str());
-        let daemons = scan_daemons(&test_screen).unwrap();
+        let mut ocr = Ocr::new();
+        let daemons = scan_daemons(&mut ocr, &test_screen).unwrap();
         assert_eq!(
             daemons,
             vec![
