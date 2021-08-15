@@ -45,7 +45,8 @@ brew install tesseract leptonica
 
 Manually download the following files:
 
-`deps\opencv_world412.dll` (only for dynamic library builds)
-`assets\tesseract\eng.traineddata`
+- <https://github.com/tesseract-ocr/tessdata/blob/master/eng.traineddata> to
+`assets/tesseract/eng.traineddata`
 
-NOTE: to run the executable when using dynamic library builds, it is necessary to place a copy of the dll in the same folder of the executable to be run.
+NOTE: to run the executable when using dynamic library builds, it is necessary to place a copy of the dll in the same folder of the executable to be run:
+- `opencv_world4xx.dll`

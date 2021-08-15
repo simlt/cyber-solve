@@ -31,7 +31,7 @@ pub(crate) fn debug_show(name: &str, mat: &Mat) {
 #[allow(dead_code)]
 fn debug_image() -> Result<Mat, String> {
     let screen = imread(
-        "assets/images/test_6x6.png",
+        "test/test_6x6.png",
         ImreadModes::IMREAD_UNCHANGED as i32,
     )
     .expect("File test_6x6.png not found");
@@ -67,10 +67,7 @@ pub(crate) fn capture_and_scan() -> Result<Puzzle, String> {
 }
 
 pub(crate) fn scan<'screen, 'puzzle>(screen: &'screen Mat) -> Result<Puzzle, String> {
-    let mut grey = unsafe {
-        Mat::new_rows_cols(screen.rows(), screen.cols(), cv::CV_8UC1)
-            .expect("Failed to initialize matrix")
-    };
+    let mut grey = Mat::default();
     // convert to greyscale
     imgproc::cvt_color(&screen, &mut grey, imgproc::COLOR_BGR2GRAY, 0).unwrap();
     // debug_show(&grey);
@@ -442,10 +439,10 @@ fn extract_cell(img: &Mat, cell: &cv::Rect) -> Result<String, String> {
 mod tests {
     use super::*;
 
-    static FILE_TEST_5: &str = "assets/images/test_5x5.jpg";
-    static FILE_TEST_6: &str = "assets/images/test_6x6.png";
-    static FILE_TEST_6_2: &str = "assets/images/test_6x6_2.jpg";
-    static FILE_TEST_4_DAEMONS: &str = "assets/images/test_4-daemons.jpg";
+    static FILE_TEST_5: &str = "test/test_5x5.jpg";
+    static FILE_TEST_6: &str = "test/test_6x6.png";
+    static FILE_TEST_6_2: &str = "test/test_6x6_2.jpg";
+    static FILE_TEST_4_DAEMONS: &str = "test/test_4-daemons.jpg";
 
     #[test]
     fn test_buffer_detect_7() {
