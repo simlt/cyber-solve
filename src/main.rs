@@ -9,6 +9,7 @@ mod screenshot;
 mod solver;
 mod types;
 mod utils;
+mod win32;
 
 fn main() {
     let mut overlay = overlay::Overlay::new();
