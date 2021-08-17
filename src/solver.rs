@@ -31,9 +31,10 @@ struct SolutionState {
 impl SolutionState {
     /// Create a new initial solution state for a puzzle
     fn new(puzzle: &Puzzle) -> SolutionState {
+        let buffer_size = puzzle.buffer_size.try_into().unwrap();
         Self {
-            buffer: vec!["".to_string(); puzzle.buffer_size.try_into().unwrap()],
-            moves: vec![PuzzleMove::None; puzzle.buffer_size.try_into().unwrap()],
+            buffer: Vec::with_capacity(buffer_size),
+            moves: Vec::with_capacity(buffer_size),
             move_count: 0,
             daemons: vec![DaemonMatchState::Partial(0); puzzle.daemons.len()],
             next_move_type: PuzzleMoveType::SelectColumn,
@@ -143,6 +144,11 @@ impl<'a> BreachSolver<'a> {
         for (new_move, (row, col)) in available_moves {
             let cell_ref = self.puzzle.grid.get_cell(row, col);
 
+            // Update cell usage
+            new_state.moves.push(new_move);
+            new_state.buffer.push(cell_ref.to_string());
+            new_state.used_cells.insert((row, col), true);
+
             // Update daemon state
             // TODO: (perf) prune if any remaning match len is greater than remaining buffer size
             for (n, daemon) in self.puzzle.daemons.iter().enumerate() {
@@ -162,11 +168,6 @@ impl<'a> BreachSolver<'a> {
                     }
                 }
             }
-
-            // Update cell usage
-            new_state.moves[current_move_index] = new_move;
-            new_state.buffer[current_move_index] = cell_ref.to_string();
-            new_state.used_cells.insert((row, col), true);
 
             // Check all daemons for completion
             let all_daemons_completed = new_state
@@ -191,12 +192,11 @@ impl<'a> BreachSolver<'a> {
                 }
             }
 
-            // Reset used_cell and daemons before cycling on next cell
+            // Reset new_state buffer, used_cells and daemons before cycling on next cell
             new_state.daemons.copy_from_slice(&state.daemons);
+            new_state.buffer.pop();
+            new_state.moves.pop();
             new_state.used_cells.insert((row, col), false);
-            // NOTE(perf): the following lines can be omitted, because the next cycle is guaranteed to overwrite the same data
-            // new_state.buffer[current_move_index] = String::from("");
-            // new_state.moves[current_move_index] = PuzzleMove::None;
         }
 
         solutions
