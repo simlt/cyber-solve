@@ -1,9 +1,14 @@
-use std::ffi::CString;
+use std::default::Default;
 
-use bindings::Windows::Win32::{
-    Foundation::*, Graphics::Gdi::*, System::Diagnostics::Debug::GetLastError,
-    System::LibraryLoader::GetModuleHandleA, UI::WindowsAndMessaging::*,
+use bindings::{
+    Handle,
+    Windows::Win32::{
+        Foundation::*, Graphics::Gdi::*, System::Diagnostics::Debug::GetLastError,
+        UI::WindowsAndMessaging::*,
+    },
 };
+
+use super::gui_window::GuiWindowClass;
 
 fn unwrap_win32_result<T>(result: Result<T, String>) -> Result<T, String> {
     if let Err(message) = result {
@@ -13,121 +18,31 @@ fn unwrap_win32_result<T>(result: Result<T, String>) -> Result<T, String> {
     return result;
 }
 
-pub(crate) struct OverlayWindow {
+pub(crate) struct OverlayWindow<'a> {
     hwnd: HWND,
-    class_name: String,
-    class_name_cstr: CString,
-    width: i32,
-    height: i32,
 
     // Loaded image bitmap (may be NULL)
     bmp_info: BITMAPINFO,
     bmp_pixels: Option<Vec<u8>>,
+
+    window_class: GuiWindowClass<'a>,
+    // window: &GuiWindow<'a>,
 }
 
-impl OverlayWindow {
+impl OverlayWindow<'_> {
     fn new(width: i32, height: i32, class_name: &str) -> Self {
-        let class_name_cstr = CString::new(class_name).expect("CString::new failed");
-        Self {
-            hwnd: HWND(0),
-            width,
-            height,
-            class_name: class_name.to_owned(),
-            class_name_cstr,
-            bmp_info: BITMAPINFO::default(),
+        let window_class = GuiWindowClass::new(class_name);
+        let window = window_class
+            .create_window(width, height)
+            .expect("Failed to initialize GuiWindow");
+        let overlay = Self {
+            bmp_info: Default::default(),
             bmp_pixels: None,
-        }
-    }
-
-    fn init_window_class(&self) -> Result<WNDCLASSEXA, String> {
-        let instance = unsafe { GetModuleHandleA(None) };
-        if instance.is_null() {
-            return Err("GetModuleHandleA failed".to_string());
-        }
-
-        let wc = WNDCLASSEXA {
-            // hCursor: LoadCursorW(None, IDC_ARROW),
-            cbSize: std::mem::size_of::<WNDCLASSEXA>() as u32,
-            style: CS_HREDRAW | CS_VREDRAW,
-            lpfnWndProc: Some(Self::wndproc),
-            hInstance: instance,
-            // lpszClassName: self.lp_class_name,
-            lpszClassName: PSTR(self.class_name_cstr.as_ptr() as _),
-            ..Default::default()
+            hwnd: window.hwnd,
+            window_class,
         };
-
-        let atom = unsafe { RegisterClassExA(&wc) };
-        if atom == 0 {
-            return Err("RegisterClassExA failed".to_string());
-        }
-
-        Ok(wc)
-    }
-
-    #[allow(non_snake_case)]
-    pub(crate) fn init(&mut self) -> Result<(), String> {
-        let wc = self.init_window_class()?;
-
-        let lpClassName = PSTR(self.class_name_cstr.as_ptr() as _);
-        let lpWindowName = self.class_name.to_owned() + " overlay window";
-        // https://docs.microsoft.com/en-us/windows/win32/winmsg/extended-window-styles
-        // WS_EX_LAYERED makes window invisible
-        let dwExStyle = WS_EX_NOACTIVATE | WS_EX_TRANSPARENT | WS_EX_TOPMOST; // | WS_EX_LAYERED;
-                                                                              // https://docs.microsoft.com/en-us/windows/win32/winmsg/window-styles
-        let dwStyle = WS_DISABLED;
-        let x = 0;
-        let y = 0;
-        let nWidth = self.width;
-        let nHeight = self.height;
-        let hWndParent = None;
-        let hMenu = None;
-        let hInstance = wc.hInstance;
-        let lpParam = std::ptr::null_mut();
-        let handle = unsafe {
-            CreateWindowExA(
-                dwExStyle,
-                lpClassName,
-                lpWindowName,
-                dwStyle,
-                x,
-                y,
-                nWidth,
-                nHeight,
-                hWndParent,
-                hMenu,
-                hInstance,
-                lpParam,
-            )
-        };
-
-        if handle.is_null() {
-            return Err("CreateWindowExA failed".to_string());
-        }
-        self.hwnd = handle;
-
-        // Store self instance pointer for wndproc
-        unsafe {
-            SetWindowLong(self.hwnd, GWLP_USERDATA, self as *mut Self as _);
-        }
-
-        // TODO: how to call run in the thread
-        // std::thread::spawn(|| {
-        //     unsafe { self.run().unwrap() };
-        // });
-
-        Ok(())
-    }
-
-    pub(crate) unsafe fn run(&self) -> Result<(), String> {
-        let mut message = MSG::default();
-
-        loop {
-            GetMessageA(&mut message, None, 0, 0);
-            if message.message == WM_QUIT {
-                return Ok(());
-            }
-            DispatchMessageA(&message);
-        }
+        window.set_painter(&|hdc| overlay.on_paint(hdc));
+        overlay
     }
 
     pub(crate) fn show(&self) {
@@ -138,11 +53,16 @@ impl OverlayWindow {
         unsafe { ShowWindow(self.hwnd, SW_HIDE) };
     }
 
+    pub(crate) fn run(&self) -> Result<(), String> {
+        // self.window.run(); // TODO:
+        Ok(())
+    }
+
     pub(crate) fn load_bitmap_from_bytes(&mut self, bitmap_bytes: &[u8]) -> Result<(), String> {
         unsafe {
             let hdc = GetDC(self.hwnd);
-            if hdc.is_null() {
-                return Err("GetDC failed".to_string());
+            if let Err(err) = hdc.ok() {
+                return Err(err.to_string());
             }
 
             // Read header info
@@ -207,58 +127,6 @@ impl OverlayWindow {
 
         Ok(())
     }
-
-    #[allow(dead_code)]
-    extern "system" fn wndproc(
-        window: HWND,
-        message: u32,
-        wparam: WPARAM,
-        lparam: LPARAM,
-    ) -> LRESULT {
-        unsafe {
-            match message as u32 {
-                WM_PAINT => {
-                    let mut ps = PAINTSTRUCT::default();
-                    let this = GetWindowLong(window, GWLP_USERDATA) as *mut Self;
-                    if !this.is_null() {
-                        let hdc = BeginPaint(window, &mut ps);
-                        unwrap_win32_result((*this).on_paint(hdc)).unwrap();
-                        EndPaint(window, &ps);
-                    }
-                    LRESULT(0)
-                }
-                WM_DESTROY => {
-                    PostQuitMessage(0);
-                    LRESULT(0)
-                }
-                _ => DefWindowProcA(window, message, wparam, lparam),
-            }
-        }
-    }
-}
-
-#[allow(non_snake_case)]
-#[cfg(target_pointer_width = "32")]
-unsafe fn SetWindowLong(window: HWND, index: WINDOW_LONG_PTR_INDEX, value: isize) -> isize {
-    SetWindowLongA(window, index, value as _) as _
-}
-
-#[allow(non_snake_case)]
-#[cfg(target_pointer_width = "64")]
-unsafe fn SetWindowLong(window: HWND, index: WINDOW_LONG_PTR_INDEX, value: isize) -> isize {
-    SetWindowLongPtrA(window, index, value)
-}
-
-#[allow(non_snake_case)]
-#[cfg(target_pointer_width = "32")]
-unsafe fn GetWindowLong(window: HWND, index: WINDOW_LONG_PTR_INDEX) -> isize {
-    GetWindowLongA(window, index) as _
-}
-
-#[allow(non_snake_case)]
-#[cfg(target_pointer_width = "64")]
-unsafe fn GetWindowLong(window: HWND, index: WINDOW_LONG_PTR_INDEX) -> isize {
-    GetWindowLongPtrA(window, index)
 }
 
 // TESTS
@@ -271,15 +139,13 @@ mod tests {
     use super::*;
 
     #[test]
-    fn it_creates_window() {
-        let mut window = OverlayWindow::new(300, 300, "Test");
-        let result = window.init();
-        unwrap_win32_result(result).unwrap();
+    fn it_creates_overlay_window() {
+        let window = OverlayWindow::new(300, 300, "Test");
         window.show();
-        unsafe { window.run().unwrap() };
+        window.run().unwrap();
 
         // Uncomment me to show window for some time, otherwise test will exit immediately
-        std::thread::sleep(Duration::from_millis(2000));
+        // std::thread::sleep(Duration::from_millis(2000));
     }
 
     #[test]
@@ -287,11 +153,10 @@ mod tests {
         let wnd_thread = std::thread::spawn(|| {
             let bitmap_bytes = std::fs::read(FILE_TEST_BMP).expect("Cannot read test bitmap file");
             let mut window = OverlayWindow::new(300, 300, "Test");
-            window.init().unwrap();
             let result = window.load_bitmap_from_bytes(&bitmap_bytes);
             unwrap_win32_result(result).unwrap();
             window.show();
-            unsafe { window.run().unwrap() };
+            window.run().unwrap();
         });
 
         // Wait for some time, then close window
