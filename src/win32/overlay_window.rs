@@ -1,22 +1,11 @@
 use std::default::Default;
 
-use bindings::{
-    Handle,
-    Windows::Win32::{
-        Foundation::*, Graphics::Gdi::*, System::Diagnostics::Debug::GetLastError,
-        UI::WindowsAndMessaging::*,
-    },
+use windows::{
+    runtime::Handle,
+    Win32::{Foundation::*, Graphics::Gdi::*, UI::WindowsAndMessaging::*},
 };
 
 use super::gui_window::GuiWindowClass;
-
-fn unwrap_win32_result<T>(result: Result<T, String>) -> Result<T, String> {
-    if let Err(message) = result {
-        let last_error = unsafe { GetLastError() };
-        return Err(format!("{} {:?}", message, last_error));
-    }
-    return result;
-}
 
 pub(crate) struct OverlayWindow<'a> {
     hwnd: HWND,
@@ -153,8 +142,7 @@ mod tests {
         let wnd_thread = std::thread::spawn(|| {
             let bitmap_bytes = std::fs::read(FILE_TEST_BMP).expect("Cannot read test bitmap file");
             let mut window = OverlayWindow::new(300, 300, "Test");
-            let result = window.load_bitmap_from_bytes(&bitmap_bytes);
-            unwrap_win32_result(result).unwrap();
+            let result = window.load_bitmap_from_bytes(&bitmap_bytes).unwrap();
             window.show();
             window.run().unwrap();
         });

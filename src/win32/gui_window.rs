@@ -1,8 +1,8 @@
 use std::{collections::HashMap, ffi::CString};
 
-use bindings::{
-    Handle,
-    Windows::Win32::{
+use windows::{
+    runtime::*,
+    Win32::{
         Foundation::*, Graphics::Gdi::*, System::LibraryLoader::GetModuleHandleA,
         UI::WindowsAndMessaging::*,
     },
@@ -11,7 +11,7 @@ use bindings::{
 use super::utils::*;
 
 pub trait Paintable {
-    fn paint(&self, hdc: HDC) -> Result<(), String>;
+    fn paint(&self, hdc: HDC) -> std::result::Result<(), String>;
 }
 
 pub struct GuiWindowClass<'a> {
@@ -35,7 +35,7 @@ impl<'a> GuiWindowClass<'a> {
         }
     }
 
-    fn init_window_class(class_name_cstr: &CString) -> Result<WNDCLASSEXA, String> {
+    fn init_window_class(class_name_cstr: &CString) -> std::result::Result<WNDCLASSEXA, String> {
         let instance = unsafe { GetModuleHandleA(None) };
         if let Err(err) = instance.ok() {
             return Err(err.to_string());
@@ -90,7 +90,7 @@ impl<'a> GuiWindowClass<'a> {
         }
     }
 
-    pub fn create_window(&'a self, width: i32, height: i32) -> Result<&GuiWindow, String> {
+    pub fn create_window(&'a self, width: i32, height: i32) -> Result<&GuiWindow> {
         let mut window = GuiWindow::new(self, width, height);
         window.init()?;
 
@@ -111,7 +111,7 @@ pub struct GuiWindow<'a> {
 }
 
 impl Paintable for GuiWindow<'_> {
-    fn paint(&self, hdc: HDC) -> Result<(), String> {
+    fn paint(&self, hdc: HDC) -> std::result::Result<(), String> {
         Ok(())
     }
 }
@@ -128,7 +128,7 @@ impl<'a> GuiWindow<'a> {
     }
 
     #[allow(non_snake_case)]
-    pub fn init(&mut self) -> Result<(), String> {
+    pub fn init(&mut self) -> Result<()> {
         let lpClassName = PSTR(self.window_class.class_name_cstr.as_ptr() as _);
         let lpWindowName = self.window_class.class_name.clone() + " overlay window";
         // https://docs.microsoft.com/en-us/windows/win32/winmsg/extended-window-styles
@@ -160,11 +160,8 @@ impl<'a> GuiWindow<'a> {
                 hInstance,
                 lpParam,
             )
-        };
+        }.ok()?;
 
-        if let Err(err) = handle.ok() {
-            return Err(err.to_string());
-        }
         self.hwnd = handle;
 
         // Store self instance pointer for wndproc
@@ -180,7 +177,7 @@ impl<'a> GuiWindow<'a> {
         Ok(())
     }
 
-    pub fn run(&self) -> Result<(), String> {
+    pub fn run(&self) -> Result<()> {
         let mut message = MSG::default();
 
         loop {
