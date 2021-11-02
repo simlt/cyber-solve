@@ -20,6 +20,15 @@ fn main() {
         println!("cargo:rustc-link-lib=dylib=comdlg32");
     }
 
+    // MacOS
+    if cfg!(macos) {
+        println!("export DYLD_FALLBACK_LIBRARY_PATH=\"$(xcode-select --print-path)/usr/lib/\"");
+    }
+
+    if cfg!(linux) {
+        println!("export CARGO_BUILD_TARGET=\"x86_64-pc-windows-gnu\"");
+    }
+
     // Bundle assets
     // let out_dir = env::var("OUT_DIR").unwrap();
     let target_dir = get_output_path();

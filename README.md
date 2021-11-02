@@ -35,10 +35,19 @@ apt-get install libleptonica-dev libtesseract-dev clang tesseract-ocr libclang-d
 
 ```sh
 # OpenCV deps
-brew install opencv libclang
+brew install opencv pkg-config
 
 # Install tessless deps
 brew install tesseract leptonica
+```
+
+## Devcontainer cross build (from Mac M1 host)
+
+```sh
+# Install x86-64 compiler
+apt install gcc-x86-64-linux-gnu
+# Add rust windows x86_64 target
+rustup target add x86_64-pc-windows-gnu
 ```
 
 ## Extra files
