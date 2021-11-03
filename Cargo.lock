@@ -141,7 +141,7 @@ dependencies = [
  "lazy_static",
  "nom",
  "rust-ini",
- "serde 1.0.127",
+ "serde 1.0.130",
  "serde-hjson",
  "serde_json",
  "toml",
@@ -238,9 +238,9 @@ checksum = "830d08ce1d1d941e6b30645f1a0eb5643013d835ce3779a5fc208261dbe10f55"
 
 [[package]]
 name = "leptess"
-version = "0.13.0"
+version = "0.13.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "5a78791dce7616b893f90faf092c1c61e016daa3ee04b066c96109f00499ca92"
+checksum = "1574614507481dca4c64e4acc20dfc19f1e432295abae08b1741a6760998aeca"
 dependencies = [
  "tesseract-plumbing",
  "thiserror",
@@ -248,9 +248,9 @@ dependencies = [
 
 [[package]]
 name = "leptonica-plumbing"
-version = "0.3.0"
+version = "0.4.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "5661a64516fc6105ef9720f2628002aa766e6cecec06aa642c461c6354691e2b"
+checksum = "8d9c9a9c02ff523c808960bab7bbe64a93201e7a86942f276429ac43306a87ed"
 dependencies = [
  "leptonica-sys",
  "thiserror",
@@ -360,9 +360,9 @@ checksum = "692fcb63b64b1758029e0a96ee63e049ce8c5948587f2f7208df04625e5f6b56"
 
 [[package]]
 name = "opencv"
-version = "0.54.0"
+version = "0.58.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "b0b4619a31630dede07daa1518e30b1e93be1b55e2d8dbc5ebd9e8532dddd5d0"
+checksum = "e11f886b17e2339ccdd8232216d5a9ab1dbae15ad93238987142826b4719240a"
 dependencies = [
  "cc",
  "clang",
@@ -381,9 +381,9 @@ dependencies = [
 
 [[package]]
 name = "opencv-binding-generator"
-version = "0.29.1"
+version = "0.33.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "942197fb66978ca2e82a5664c7b040331ae8cf642d402c3dba3115ac2b8ecfe3"
+checksum = "ea6d6fb7ac8593eb1774fd4142bf5cdab6b9a555662a0e904baf8b84802c1399"
 dependencies = [
  "clang",
  "clang-sys",
@@ -520,7 +520,7 @@ dependencies = [
  "lazy_static",
  "leptess",
  "opencv",
- "serde 1.0.127",
+ "serde 1.0.130",
  "tempfile",
  "windows",
 ]
@@ -557,9 +557,9 @@ checksum = "9dad3f759919b92c3068c696c15c3d17238234498bbdcc80f2c469606f948ac8"
 
 [[package]]
 name = "serde"
-version = "1.0.127"
+version = "1.0.130"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "f03b9878abf6d14e6779d3f24f07b2cfa90352cfec4acc5aab8f1ac7f146fae8"
+checksum = "f12d06de37cf59146fbdecab66aa99f9fe4f78722e3607577a5375d66bd0c913"
 dependencies = [
  "serde_derive",
 ]
@@ -578,9 +578,9 @@ dependencies = [
 
 [[package]]
 name = "serde_derive"
-version = "1.0.127"
+version = "1.0.130"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "a024926d3432516606328597e0f224a51355a493b49fdd67e9209187cbe55ecc"
+checksum = "d7bc1a1ab1961464eae040d96713baa5a724a8152c1222492465b54322ec508b"
 dependencies = [
  "proc-macro2",
  "quote",
@@ -595,7 +595,7 @@ checksum = "336b10da19a12ad094b59d870ebde26a45402e5b470add4b5fd03c5048a32127"
 dependencies = [
  "itoa",
  "ryu",
- "serde 1.0.127",
+ "serde 1.0.130",
 ]
 
 [[package]]
@@ -658,9 +658,9 @@ dependencies = [
 
 [[package]]
 name = "tesseract-plumbing"
-version = "0.5.1"
+version = "0.5.2"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "80c035c232445001f860ba4aab123920e21d62a97474c5782350eb1e158e96d2"
+checksum = "49212e1ad9511a098143f1e990c5ab7401ef6c7bfb0e2c57ab385fa7f87d2a88"
 dependencies = [
  "leptonica-plumbing",
  "tesseract-sys",
@@ -714,7 +714,7 @@ version = "0.5.8"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "a31142970826733df8241ef35dc040ef98c679ab14d7c3e54d827099b3acecaa"
 dependencies = [
- "serde 1.0.127",
+ "serde 1.0.130",
 ]
 
 [[package]]
