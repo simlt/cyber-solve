@@ -22,7 +22,7 @@ pub struct GuiWindowClass<'a> {
     windows: HashMap<isize, GuiWindow<'a>>,
 }
 
-impl<'a> GuiWindowClass<'a> {
+impl GuiWindowClass<'_> {
     pub fn new(class_name: &str) -> Self {
         let class_name_cstr = CString::new(class_name).expect("CString::new failed");
         let wc =
@@ -90,19 +90,21 @@ impl<'a> GuiWindowClass<'a> {
         }
     }
 
-    pub fn create_window(&'a self, width: i32, height: i32) -> Result<&GuiWindow> {
-        let mut window = GuiWindow::new(self, width, height);
-        window.init()?;
+    pub fn create_window(&mut self, width: i32, height: i32) -> Result<&GuiWindow> {
+        let mut window = GuiWindow::new(width, height);
+        window.init(&self.class_name)?;
 
-        // Register windows
+        let hwnd = window.hwnd.0;
+        // Move and register window
         self.windows.insert(window.hwnd.0, window);
 
-        Ok(&window)
+        // Return a reference
+        let windows_ref = self.windows.get(&hwnd).unwrap();
+        Ok(windows_ref)
     }
 }
 
 pub struct GuiWindow<'a> {
-    pub window_class: &'a GuiWindowClass<'a>,
     pub hwnd: HWND,
     pub width: i32,
     pub height: i32,
@@ -117,9 +119,8 @@ impl Paintable for GuiWindow<'_> {
 }
 
 impl<'a> GuiWindow<'a> {
-    pub fn new(window_class: &'a GuiWindowClass, width: i32, height: i32) -> Self {
+    pub fn new(width: i32, height: i32) -> Self {
         Self {
-            window_class,
             hwnd: HWND(0),
             width,
             height,
@@ -128,22 +129,22 @@ impl<'a> GuiWindow<'a> {
     }
 
     #[allow(non_snake_case)]
-    pub fn init(&mut self) -> Result<()> {
-        let lpClassName = PSTR(self.window_class.class_name_cstr.as_ptr() as _);
-        let lpWindowName = self.window_class.class_name.clone() + " overlay window";
+    pub fn init(&mut self, class_name: &str) -> Result<()> {
+        let lpClassName = PSTR(class_name.to_owned().as_mut_ptr());
+        let lpWindowName = class_name.to_owned() + " overlay window";
         // https://docs.microsoft.com/en-us/windows/win32/winmsg/extended-window-styles
         // WS_EX_LAYERED makes window invisible
         let dwExStyle = WS_EX_NOACTIVATE | WS_EX_TRANSPARENT | WS_EX_TOPMOST; // | WS_EX_LAYERED;
                                                                               // https://docs.microsoft.com/en-us/windows/win32/winmsg/window-styles
         let dwStyle = WS_DISABLED;
-        let dwStyle = WS_TILEDWINDOW; // FIXME:
+        // let dwStyle = WS_TILEDWINDOW; // FIXME:
         let x = 0;
         let y = 0;
         let nWidth = self.width;
         let nHeight = self.height;
         let hWndParent = None;
         let hMenu = None;
-        let hInstance = self.window_class.wc.hInstance;
+        let hInstance = HINSTANCE::default(); // self.window_class.wc.hInstance;
         let lpParam = std::ptr::null_mut();
         let handle = unsafe {
             CreateWindowExA(
@@ -160,7 +161,8 @@ impl<'a> GuiWindow<'a> {
                 hInstance,
                 lpParam,
             )
-        }.ok()?;
+        }
+        .ok()?;
 
         self.hwnd = handle;
 
@@ -199,7 +201,7 @@ impl<'a> GuiWindow<'a> {
         unsafe { ShowWindow(self.hwnd, SW_HIDE) };
     }
 
-    pub fn set_painter(&self, painter: &'a dyn FnMut(usize)) {
+    pub fn set_painter(&mut self, painter: &'a dyn FnMut(usize)) {
         self.painter = Some(painter)
     }
 }
@@ -213,7 +215,7 @@ mod tests {
 
     #[test]
     fn it_creates_window() {
-        let class = GuiWindowClass::new("Test window class");
+        let mut class = GuiWindowClass::new("Test window class");
         let window = class.create_window(300, 300).unwrap();
         window.show();
         window.run().unwrap();

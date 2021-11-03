@@ -9,6 +9,8 @@ use super::gui_window::GuiWindowClass;
 
 pub(crate) struct OverlayWindow<'a> {
     hwnd: HWND,
+    width: i32,
+    height: i32,
 
     // Loaded image bitmap (may be NULL)
     bmp_info: BITMAPINFO,
@@ -18,20 +20,30 @@ pub(crate) struct OverlayWindow<'a> {
     // window: &GuiWindow<'a>,
 }
 
-impl OverlayWindow<'_> {
+impl<'a> OverlayWindow<'a> {
     fn new(width: i32, height: i32, class_name: &str) -> Self {
         let window_class = GuiWindowClass::new(class_name);
-        let window = window_class
-            .create_window(width, height)
-            .expect("Failed to initialize GuiWindow");
-        let overlay = Self {
+        let mut overlay = Self {
+            width,
+            height,
             bmp_info: Default::default(),
             bmp_pixels: None,
-            hwnd: window.hwnd,
+            hwnd: Default::default(),
             window_class,
         };
-        window.set_painter(&|hdc| overlay.on_paint(hdc));
+
+        let window = overlay
+            .window_class
+            .create_window(overlay.width, overlay.height)
+            .expect("Failed to initialize GuiWindow");
+        overlay.hwnd = window.hwnd;
+
         overlay
+    }
+
+    fn init(&'a mut self) -> &'a mut Self {
+        // window.set_painter(&|hdc| self.on_paint(hdc));
+        self
     }
 
     pub(crate) fn show(&self) {
@@ -142,7 +154,9 @@ mod tests {
         let wnd_thread = std::thread::spawn(|| {
             let bitmap_bytes = std::fs::read(FILE_TEST_BMP).expect("Cannot read test bitmap file");
             let mut window = OverlayWindow::new(300, 300, "Test");
-            let result = window.load_bitmap_from_bytes(&bitmap_bytes).unwrap();
+            // window.init();
+
+            window.load_bitmap_from_bytes(&bitmap_bytes).unwrap();
             window.show();
             window.run().unwrap();
         });
