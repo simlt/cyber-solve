@@ -15,7 +15,6 @@ pub trait Paintable {
 }
 
 pub struct GuiWindowClass<'a> {
-    class_name_cstr: CString,
     class_name: String,
     wc: WNDCLASSEXA,
 
@@ -28,79 +27,62 @@ impl GuiWindowClass<'_> {
         let wc =
             Self::init_window_class(&class_name_cstr).expect("Failed to initialize window class");
         Self {
-            class_name_cstr,
             class_name: class_name.to_owned(),
             wc,
             windows: Default::default(),
         }
     }
 
-    fn init_window_class(class_name_cstr: &CString) -> std::result::Result<WNDCLASSEXA, String> {
-        let instance = unsafe { GetModuleHandleA(None) };
-        if let Err(err) = instance.ok() {
-            return Err(err.to_string());
-        };
+    fn init_window_class(class_name_cstr: &CString) -> Result<WNDCLASSEXA> {
+        let instance = unsafe { GetModuleHandleA(None) }.ok()?;
 
         let wc = WNDCLASSEXA {
             cbSize: std::mem::size_of::<WNDCLASSEXA>() as u32,
-            style: CS_HREDRAW | CS_VREDRAW,
-            lpfnWndProc: Some(Self::wndproc),
             hInstance: instance,
-            // lpszClassName: self.lp_class_name,
             lpszClassName: PSTR(class_name_cstr.as_ptr() as _),
+
+            style: CS_HREDRAW | CS_VREDRAW,
+            lpfnWndProc: Some(Self::wnd_proc),
             ..Default::default()
         };
 
         let atom = unsafe { RegisterClassExA(&wc) };
         if atom == 0 {
-            return Err("RegisterClassExA failed".to_string());
+            return Err(Error::from_win32());
         }
 
         Ok(wc)
     }
 
-    #[allow(dead_code)]
-    extern "system" fn wndproc(
+    unsafe extern "system" fn wnd_proc(
         window: HWND,
         message: u32,
         wparam: WPARAM,
         lparam: LPARAM,
     ) -> LRESULT {
-        unsafe {
-            match message as u32 {
-                WM_PAINT => {
-                    let mut ps = PAINTSTRUCT::default();
-                    // TODO: this cast is valid only if Self is not dropped
-                    let this = GetWindowLong(window, GWLP_USERDATA) as *mut Self;
-                    if !this.is_null() {
-                        let hdc = BeginPaint(window, &mut ps);
-                        if let Some(window) = (*this).windows.get(&window.0) {
-                            window.paint(hdc);
-                        }
-                        EndPaint(window, &ps);
-                    }
-                    LRESULT(0)
-                }
-                WM_DESTROY => {
-                    PostQuitMessage(0);
-                    LRESULT(0)
-                }
-                _ => DefWindowProcA(window, message, wparam, lparam),
-            }
+        let this = GetWindowLong(window, GWLP_USERDATA) as *mut GuiWindow;
+        if let Some(this) = this.as_mut() {
+            return this.message_handler(message, wparam, lparam);
         }
+
+        DefWindowProcW(window, message, wparam, lparam)
     }
 
     pub fn create_window(&mut self, width: i32, height: i32) -> Result<&GuiWindow> {
         let mut window = GuiWindow::new(width, height);
-        window.init(&self.class_name)?;
+        window.init(&self.class_name, self.wc.hInstance)?;
 
-        let hwnd = window.hwnd.0;
         // Move and register window
-        self.windows.insert(window.hwnd.0, window);
+        let hwnd = window.hwnd;
+        self.windows.insert(hwnd.0, window);
 
         // Return a reference
-        let windows_ref = self.windows.get(&hwnd).unwrap();
+        let windows_ref = self.get_window(hwnd).unwrap();
         Ok(windows_ref)
+    }
+
+    pub fn get_window(&self, hwnd: HWND) -> Option<&GuiWindow> {
+        self.windows.get(&hwnd.0)
     }
 }
 
@@ -113,7 +95,7 @@ pub struct GuiWindow<'a> {
 }
 
 impl Paintable for GuiWindow<'_> {
-    fn paint(&self, hdc: HDC) -> std::result::Result<(), String> {
+    fn paint(&self, _hdc: HDC) -> std::result::Result<(), String> {
         Ok(())
     }
 }
@@ -129,8 +111,7 @@ impl<'a> GuiWindow<'a> {
     }
 
     #[allow(non_snake_case)]
-    pub fn init(&mut self, class_name: &str) -> Result<()> {
-        let lpClassName = PSTR(class_name.to_owned().as_mut_ptr());
+    pub fn init(&mut self, class_name: &str, hInstance: HINSTANCE) -> Result<()> {
         let lpWindowName = class_name.to_owned() + " overlay window";
         // https://docs.microsoft.com/en-us/windows/win32/winmsg/extended-window-styles
         // WS_EX_LAYERED makes window invisible
@@ -144,12 +125,12 @@ impl<'a> GuiWindow<'a> {
         let nHeight = self.height;
         let hWndParent = None;
         let hMenu = None;
-        let hInstance = HINSTANCE::default(); // self.window_class.wc.hInstance;
+        // let hInstance = None; // self.window_class.wc.hInstance;
         let lpParam = std::ptr::null_mut();
         let handle = unsafe {
             CreateWindowExA(
                 dwExStyle,
-                lpClassName,
+                class_name,
                 lpWindowName,
                 dwStyle,
                 x,
@@ -165,7 +146,6 @@ impl<'a> GuiWindow<'a> {
         .ok()?;
 
         self.hwnd = handle;
-
         // Store self instance pointer for wndproc
         unsafe {
             SetWindowLong(self.hwnd, GWLP_USERDATA, self as *mut Self as _);
@@ -173,7 +153,7 @@ impl<'a> GuiWindow<'a> {
 
         // TODO: how to call run in the thread
         // std::thread::spawn(|| {
-        //     unsafe { self.run().unwrap() };
+        //    unsafe { self.run().unwrap() };
         // });
 
         Ok(())
@@ -184,11 +164,15 @@ impl<'a> GuiWindow<'a> {
 
         loop {
             unsafe {
-                GetMessageA(&mut message, None, 0, 0);
-                if message.message == WM_QUIT {
-                    return Ok(());
+                if GetMessageA(&mut message, None, 0, 0).as_bool() {
+                    if message.message == WM_QUIT {
+                        return Ok(());
+                    }
+                    TranslateMessage(&message);
+                    DispatchMessageA(&message);
+                } else {
+                    panic!("GuiWindow::run::GetMessageA error")
                 }
-                DispatchMessageA(&message);
             }
         }
     }
@@ -203,6 +187,26 @@ impl<'a> GuiWindow<'a> {
 
     pub fn set_painter(&mut self, painter: &'a dyn FnMut(usize)) {
         self.painter = Some(painter)
+    }
+
+    fn message_handler(&mut self, message: u32, wparam: WPARAM, lparam: LPARAM) -> LRESULT {
+        match message {
+            WM_DESTROY => {
+                unsafe { PostQuitMessage(0) };
+                return LRESULT(0);
+            }
+            WM_PAINT => {
+                let mut ps = PAINTSTRUCT::default();
+                unsafe {
+                    let hdc = BeginPaint(self.hwnd, &mut ps);
+                    self.paint(hdc);
+                    EndPaint(self.hwnd, &ps);
+                }
+                return LRESULT(0);
+            }
+            _ => {}
+        }
+        unsafe { DefWindowProcW(self.hwnd, message, wparam, lparam) }
     }
 }
 
