@@ -1,9 +1,9 @@
-use std::{collections::HashMap, ffi::CString};
+use std::collections::HashMap;
 
 use windows::{
     runtime::*,
     Win32::{
-        Foundation::*, Graphics::Gdi::*, System::LibraryLoader::GetModuleHandleA,
+        Foundation::*, Graphics::Gdi::*, System::LibraryLoader::GetModuleHandleW,
         UI::WindowsAndMessaging::*,
     },
 };
@@ -11,21 +11,20 @@ use windows::{
 use super::utils::*;
 
 pub trait Paintable {
-    fn paint(&self, hdc: HDC) -> std::result::Result<(), String>;
+    fn paint(&self, ps: &mut PAINTSTRUCT, hdc: HDC) -> std::result::Result<(), String>;
 }
 
-pub struct GuiWindowClass<'a> {
+pub struct GuiWindowClass {
     class_name: String,
-    wc: WNDCLASSEXA,
+    wc: WNDCLASSEXW,
 
-    windows: HashMap<isize, GuiWindow<'a>>,
+    windows: HashMap<isize, GuiWindow>,
 }
 
-impl GuiWindowClass<'_> {
+#[allow(non_snake_case)]
+impl GuiWindowClass {
     pub fn new(class_name: &str) -> Self {
-        let class_name_cstr = CString::new(class_name).expect("CString::new failed");
-        let wc =
-            Self::init_window_class(&class_name_cstr).expect("Failed to initialize window class");
+        let wc = Self::init_window_class(class_name).expect("Failed to initialize window class");
         Self {
             class_name: class_name.to_owned(),
             wc,
@@ -33,20 +32,23 @@ impl GuiWindowClass<'_> {
         }
     }
 
-    fn init_window_class(class_name_cstr: &CString) -> Result<WNDCLASSEXA> {
-        let instance = unsafe { GetModuleHandleA(None) }.ok()?;
+    fn init_window_class<'a, Param0: IntoParam<'a, PWSTR>>(
+        class_name: Param0,
+    ) -> Result<WNDCLASSEXW> {
+        let instance = unsafe { GetModuleHandleW(None) }.ok()?;
+        let lpszClassName = unsafe { class_name.into_param().abi() };
 
-        let wc = WNDCLASSEXA {
-            cbSize: std::mem::size_of::<WNDCLASSEXA>() as u32,
+        let wc = WNDCLASSEXW {
+            cbSize: std::mem::size_of::<WNDCLASSEXW>() as u32,
             hInstance: instance,
-            lpszClassName: PSTR(class_name_cstr.as_ptr() as _),
+            lpszClassName,
 
             style: CS_HREDRAW | CS_VREDRAW,
             lpfnWndProc: Some(Self::wnd_proc),
             ..Default::default()
         };
 
-        let atom = unsafe { RegisterClassExA(&wc) };
+        let atom = unsafe { RegisterClassExW(&wc) };
         if atom == 0 {
             return Err(Error::from_win32());
         }
@@ -86,37 +88,37 @@ impl GuiWindowClass<'_> {
     }
 }
 
-pub struct GuiWindow<'a> {
+pub struct GuiWindow {
     pub hwnd: HWND,
     pub width: i32,
     pub height: i32,
-
-    pub painter: Option<&'a dyn FnMut(usize)>,
 }
 
-impl Paintable for GuiWindow<'_> {
-    fn paint(&self, _hdc: HDC) -> std::result::Result<(), String> {
+impl Paintable for GuiWindow {
+    fn paint(&self, ps: &mut PAINTSTRUCT, hdc: HDC) -> std::result::Result<(), String> {
+        let hbr = HBRUSH((COLOR_WINDOW.0 + 1).try_into().unwrap());
+        unsafe { FillRect(hdc, &ps.rcPaint, hbr) };
         Ok(())
     }
 }
 
-impl<'a> GuiWindow<'a> {
+#[allow(non_snake_case)]
+impl GuiWindow {
     pub fn new(width: i32, height: i32) -> Self {
         Self {
             hwnd: HWND(0),
             width,
             height,
-            painter: None,
         }
     }
 
-    #[allow(non_snake_case)]
     pub fn init(&mut self, class_name: &str, hInstance: HINSTANCE) -> Result<()> {
         let lpWindowName = class_name.to_owned() + " overlay window";
         // https://docs.microsoft.com/en-us/windows/win32/winmsg/extended-window-styles
         // WS_EX_LAYERED makes window invisible
         let dwExStyle = WS_EX_NOACTIVATE | WS_EX_TRANSPARENT | WS_EX_TOPMOST; // | WS_EX_LAYERED;
-                                                                              // https://docs.microsoft.com/en-us/windows/win32/winmsg/window-styles
+
+        // https://docs.microsoft.com/en-us/windows/win32/winmsg/window-styles
         let dwStyle = WS_DISABLED;
         // let dwStyle = WS_TILEDWINDOW; // FIXME:
         let x = 0;
@@ -128,7 +130,7 @@ impl<'a> GuiWindow<'a> {
         // let hInstance = None; // self.window_class.wc.hInstance;
         let lpParam = std::ptr::null_mut();
         let handle = unsafe {
-            CreateWindowExA(
+            CreateWindowExW(
                 dwExStyle,
                 class_name,
                 lpWindowName,
@@ -151,11 +153,6 @@ impl<'a> GuiWindow<'a> {
             SetWindowLong(self.hwnd, GWLP_USERDATA, self as *mut Self as _);
         }
 
-        // TODO: how to call run in the thread
-        // std::thread::spawn(|| {
-        //    unsafe { self.run().unwrap() };
-        // });
-
         Ok(())
     }
 
@@ -163,12 +160,12 @@ impl<'a> GuiWindow<'a> {
         let mut message = MSG::default();
 
         unsafe {
-            while GetMessageA(&mut message, None, 0, 0).into() {
+            while GetMessageW(&mut message, None, 0, 0).into() {
                 if message.message == WM_QUIT {
                     return Ok(());
                 }
                 TranslateMessage(&message);
-                DispatchMessageA(&message);
+                DispatchMessageW(&message);
             }
         }
 
@@ -176,7 +173,8 @@ impl<'a> GuiWindow<'a> {
     }
 
     pub fn show(&self) {
-        unsafe { ShowWindow(self.hwnd, SW_SHOWNOACTIVATE) };
+        // unsafe { ShowWindow(self.hwnd, SW_SHOWNOACTIVATE) };
+        unsafe { ShowWindow(self.hwnd, SW_SHOW) };
     }
 
     pub fn hide(&self) {
@@ -184,11 +182,7 @@ impl<'a> GuiWindow<'a> {
     }
 
     pub fn send_quit(hwnd: HWND) {
-        unsafe { PostMessageA(hwnd, WM_QUIT, None, None) };
-    }
-
-    pub fn set_painter(&mut self, painter: &'a dyn FnMut(usize)) {
-        self.painter = Some(painter)
+        unsafe { PostMessageW(hwnd, WM_QUIT, None, None) };
     }
 
     fn message_handler(&mut self, message: u32, wparam: WPARAM, lparam: LPARAM) -> LRESULT {
@@ -198,11 +192,11 @@ impl<'a> GuiWindow<'a> {
                 return LRESULT(0);
             }
             WM_PAINT => {
-                let mut ps = PAINTSTRUCT::default();
+                let ref mut ps = PAINTSTRUCT::default();
                 unsafe {
-                    let hdc = BeginPaint(self.hwnd, &mut ps);
-                    self.paint(hdc);
-                    EndPaint(self.hwnd, &ps);
+                    let hdc = BeginPaint(self.hwnd, ps);
+                    self.paint(ps, hdc).unwrap();
+                    EndPaint(self.hwnd, ps);
                 }
                 return LRESULT(0);
             }
@@ -239,7 +233,7 @@ mod tests {
         });
 
         // Wait for some time, then close window
-        std::thread::sleep(Duration::from_millis(1000));
+        std::thread::sleep(Duration::from_millis(2000));
         GuiWindow::send_quit(HWND(hwnd.load(Ordering::Acquire)));
         wnd_thread.join().unwrap();
     }
