@@ -162,19 +162,17 @@ impl<'a> GuiWindow<'a> {
     pub fn run(&self) -> Result<()> {
         let mut message = MSG::default();
 
-        loop {
-            unsafe {
-                if GetMessageA(&mut message, None, 0, 0).as_bool() {
-                    if message.message == WM_QUIT {
-                        return Ok(());
-                    }
-                    TranslateMessage(&message);
-                    DispatchMessageA(&message);
-                } else {
-                    panic!("GuiWindow::run::GetMessageA error")
+        unsafe {
+            while GetMessageA(&mut message, None, 0, 0).into() {
+                if message.message == WM_QUIT {
+                    return Ok(());
                 }
+                TranslateMessage(&message);
+                DispatchMessageA(&message);
             }
         }
+
+        Ok(())
     }
 
     pub fn show(&self) {
@@ -183,6 +181,10 @@ impl<'a> GuiWindow<'a> {
 
     pub fn hide(&self) {
         unsafe { ShowWindow(self.hwnd, SW_HIDE) };
+    }
+
+    pub fn send_quit(hwnd: HWND) {
+        unsafe { PostMessageA(hwnd, WM_QUIT, None, None) };
     }
 
     pub fn set_painter(&mut self, painter: &'a dyn FnMut(usize)) {
@@ -213,18 +215,32 @@ impl<'a> GuiWindow<'a> {
 // TESTS
 #[cfg(test)]
 mod tests {
-    // use std::time::Duration;
+    use std::{
+        sync::{
+            atomic::{AtomicIsize, Ordering},
+            Arc,
+        },
+        time::Duration,
+    };
 
     use super::*;
 
     #[test]
     fn it_creates_window() {
-        let mut class = GuiWindowClass::new("Test window class");
-        let window = class.create_window(300, 300).unwrap();
-        window.show();
-        window.run().unwrap();
+        let hwnd = Arc::new(AtomicIsize::new(0));
+        let hwnd_clone = hwnd.clone();
 
-        // Uncomment me to show window for some time, otherwise test will exit immediately
-        // std::thread::sleep(Duration::from_millis(2000));
+        let wnd_thread = std::thread::spawn(move || {
+            let mut class = GuiWindowClass::new("Test window class");
+            let window = class.create_window(300, 300).unwrap();
+            hwnd_clone.store(window.hwnd.0, Ordering::Release);
+            window.show();
+            window.run().unwrap();
+        });
+
+        // Wait for some time, then close window
+        std::thread::sleep(Duration::from_millis(1000));
+        GuiWindow::send_quit(HWND(hwnd.load(Ordering::Acquire)));
+        wnd_thread.join().unwrap();
     }
 }
