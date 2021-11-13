@@ -3,7 +3,9 @@ use std::collections::HashMap;
 use windows::{
     runtime::*,
     Win32::{
-        Foundation::*, Graphics::Gdi::*, System::LibraryLoader::GetModuleHandleW,
+        Foundation::*,
+        Graphics::Gdi::*,
+        System::LibraryLoader::{GetModuleHandleA, GetModuleHandleW},
         UI::WindowsAndMessaging::*,
     },
 };
@@ -16,7 +18,7 @@ pub trait Paintable {
 
 pub struct GuiWindowClass {
     class_name: String,
-    wc: WNDCLASSEXW,
+    wc: WNDCLASSA,
 
     windows: HashMap<isize, GuiWindow>,
 }
@@ -32,14 +34,15 @@ impl GuiWindowClass {
         }
     }
 
-    fn init_window_class<'a, Param0: IntoParam<'a, PWSTR>>(
-        class_name: Param0,
-    ) -> Result<WNDCLASSEXW> {
-        let instance = unsafe { GetModuleHandleW(None) }.ok()?;
-        let lpszClassName = unsafe { class_name.into_param().abi() };
+    fn init_window_class(class_name: &str) -> Result<WNDCLASSA> {
+        let instance = unsafe { GetModuleHandleA(None) }.ok()?;
+        let mut str = class_name
+            .bytes()
+            .chain(::std::iter::once(0))
+            .collect::<std::vec::Vec<u8>>();
+        let lpszClassName = PSTR(str.as_mut_ptr());
 
-        let wc = WNDCLASSEXW {
-            cbSize: std::mem::size_of::<WNDCLASSEXW>() as u32,
+        let wc = WNDCLASSA {
             hInstance: instance,
             lpszClassName,
 
@@ -48,7 +51,7 @@ impl GuiWindowClass {
             ..Default::default()
         };
 
-        let atom = unsafe { RegisterClassExW(&wc) };
+        let atom = unsafe { RegisterClassA(&wc) };
         if atom == 0 {
             return Err(Error::from_win32());
         }
@@ -62,12 +65,20 @@ impl GuiWindowClass {
         wparam: WPARAM,
         lparam: LPARAM,
     ) -> LRESULT {
-        let this = GetWindowLong(window, GWLP_USERDATA) as *mut GuiWindow;
-        if let Some(this) = this.as_mut() {
-            return this.message_handler(message, wparam, lparam);
+        if message == WM_NCCREATE {
+            let cs = lparam.0 as *const CREATESTRUCTA;
+            let this = (*cs).lpCreateParams as *mut GuiWindow;
+            (*this).hwnd = window;
+
+            SetWindowLong(window, GWLP_USERDATA, this as _);
+        } else {
+            let window = GetWindowLong(window, GWLP_USERDATA) as *mut GuiWindow;
+            if let Some(window) = window.as_mut() {
+                return window.message_handler(message, wparam, lparam);
+            }
         }
 
-        DefWindowProcW(window, message, wparam, lparam)
+        DefWindowProcA(window, message, wparam, lparam)
     }
 
     pub fn create_window(&mut self, width: i32, height: i32) -> Result<&GuiWindow> {
@@ -117,10 +128,12 @@ impl GuiWindow {
         // https://docs.microsoft.com/en-us/windows/win32/winmsg/extended-window-styles
         // WS_EX_LAYERED makes window invisible
         let dwExStyle = WS_EX_NOACTIVATE | WS_EX_TRANSPARENT | WS_EX_TOPMOST; // | WS_EX_LAYERED;
+        // let dwExStyle = Default::default(); // FIXME:
 
         // https://docs.microsoft.com/en-us/windows/win32/winmsg/window-styles
         let dwStyle = WS_DISABLED;
         // let dwStyle = WS_TILEDWINDOW; // FIXME:
+        // let dwStyle = WS_OVERLAPPEDWINDOW | WS_VISIBLE; // FIXME:
         let x = 0;
         let y = 0;
         let nWidth = self.width;
@@ -128,9 +141,9 @@ impl GuiWindow {
         let hWndParent = None;
         let hMenu = None;
         // let hInstance = None; // self.window_class.wc.hInstance;
-        let lpParam = std::ptr::null_mut();
+        let lpParam = self as *mut _ as _; // Store Self instance pointer for wndproc
         let handle = unsafe {
-            CreateWindowExW(
+            CreateWindowExA(
                 dwExStyle,
                 class_name,
                 lpWindowName,
@@ -148,10 +161,6 @@ impl GuiWindow {
         .ok()?;
 
         self.hwnd = handle;
-        // Store self instance pointer for wndproc
-        unsafe {
-            SetWindowLong(self.hwnd, GWLP_USERDATA, self as *mut Self as _);
-        }
 
         Ok(())
     }
@@ -160,12 +169,12 @@ impl GuiWindow {
         let mut message = MSG::default();
 
         unsafe {
-            while GetMessageW(&mut message, None, 0, 0).into() {
+            while GetMessageA(&mut message, None, 0, 0).into() {
                 if message.message == WM_QUIT {
                     return Ok(());
                 }
                 TranslateMessage(&message);
-                DispatchMessageW(&message);
+                DispatchMessageA(&message);
             }
         }
 
@@ -182,7 +191,7 @@ impl GuiWindow {
     }
 
     pub fn send_quit(hwnd: HWND) {
-        unsafe { PostMessageW(hwnd, WM_QUIT, None, None) };
+        unsafe { PostMessageA(hwnd, WM_QUIT, None, None) };
     }
 
     fn message_handler(&mut self, message: u32, wparam: WPARAM, lparam: LPARAM) -> LRESULT {
@@ -200,9 +209,8 @@ impl GuiWindow {
                 }
                 return LRESULT(0);
             }
-            _ => {}
+            _ => unsafe { DefWindowProcA(self.hwnd, message, wparam, lparam) },
         }
-        unsafe { DefWindowProcW(self.hwnd, message, wparam, lparam) }
     }
 }
 
@@ -221,6 +229,14 @@ mod tests {
 
     #[test]
     fn it_creates_window() {
+        let mut class = GuiWindowClass::new("Test window class");
+        let window = class.create_window(300, 300).unwrap();
+        window.show();
+        window.run().unwrap();
+    }
+
+    #[test]
+    fn it_creates_window_using_thread() {
         let hwnd = Arc::new(AtomicIsize::new(0));
         let hwnd_clone = hwnd.clone();
 
