@@ -1,7 +1,7 @@
 use std::collections::HashMap;
 
 use windows::{
-    runtime::*,
+    core::*,
     Win32::{
         Foundation::*, Graphics::Gdi::*, System::LibraryLoader::GetModuleHandleA,
         UI::WindowsAndMessaging::*,

@@ -1,7 +1,7 @@
 use std::default::Default;
 
 use windows::{
-    runtime::Handle,
+    core::Handle,
     Win32::{Foundation::*, Graphics::Gdi::*, UI::WindowsAndMessaging::*},
 };
 
