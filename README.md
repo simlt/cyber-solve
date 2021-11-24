@@ -35,7 +35,7 @@ apt-get install libleptonica-dev libtesseract-dev clang tesseract-ocr libclang-d
 
 ```sh
 # OpenCV deps
-brew install opencv pkg-config
+brew install opencv llvm pkg-config
 
 # Install tessless deps
 brew install tesseract leptonica
