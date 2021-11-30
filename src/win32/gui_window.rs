@@ -1,4 +1,4 @@
-use std::collections::HashMap;
+use std::{cell::RefCell, collections::HashMap, rc::Rc};
 
 use windows::{
     core::*,
@@ -14,10 +14,16 @@ pub trait Paintable {
     fn paint(&self, ps: &mut PAINTSTRUCT) -> std::result::Result<(), String>;
 }
 
+pub trait Window {
+    fn show(&self);
+    fn hide(&self);
+    fn set_painter(&mut self, painter: Box<dyn Paintable>);
+}
+
 pub struct GuiWindowClass {
     class_name: String,
     wc: WNDCLASSA,
-    windows: HashMap<isize, Box<GuiWindow>>,
+    windows: HashMap<isize, Rc<RefCell<Box<GuiWindow>>>>,
 }
 
 #[allow(non_snake_case)]
@@ -56,28 +62,31 @@ impl GuiWindowClass {
         height: i32,
         style: Option<WINDOW_STYLE>,
         ex_style: Option<WINDOW_EX_STYLE>,
-    ) -> Result<&Box<GuiWindow>> {
-        unsafe {
-            let mut window = Box::new(GuiWindow::new(width, height));
-            if let Some(style) = style {
-                window.style = style;
-            }
-            if let Some(ex_style) = ex_style {
-                window.ex_style = ex_style;
-            }
-
-            window.init(&self.class_name, self.wc.hInstance)?;
-
-            let hwnd = window.hwnd;
-            self.windows.insert(hwnd.0, window);
-
-            let window_ref = self.windows.get(&hwnd.0).unwrap();
-            Ok(window_ref)
+        // painter: Option<Box<dyn Paintable>>,
+    ) -> Result<HWND> {
+        let mut window = Box::new(GuiWindow::new(width, height));
+        if let Some(style) = style {
+            window.style = style;
         }
+        if let Some(ex_style) = ex_style {
+            window.ex_style = ex_style;
+        }
+        // if let Some(painter) = painter {
+        //     window.painter = Some(painter);
+        // }
+
+        window.init(&self.class_name, self.wc.hInstance)?;
+
+        let hwnd = window.hwnd;
+
+        let window = Rc::new(RefCell::new(window));
+        self.windows.insert(hwnd.0, window);
+
+        Ok(hwnd)
     }
 
-    pub fn get_window(&self, hwnd: HWND) -> Option<&Box<GuiWindow>> {
-        self.windows.get(&hwnd.0)
+    pub fn get_window(&self, hwnd: HWND) -> Option<&Rc<RefCell<Box<GuiWindow>>>> {
+        self.windows.get(&hwnd.0).map(|w| w)
     }
 
     fn run_handler(&self) -> Result<()> {
@@ -114,7 +123,6 @@ impl GuiWindowClass {
     }
 }
 
-#[derive(Default)]
 pub struct GuiWindow {
     pub hwnd: HWND,
     pub width: i32,
@@ -123,14 +131,8 @@ pub struct GuiWindow {
     pub style: WINDOW_STYLE,
     // https://docs.microsoft.com/en-us/windows/win32/winmsg/extended-window-styles
     pub ex_style: WINDOW_EX_STYLE,
-}
 
-impl Paintable for GuiWindow {
-    fn paint(&self, ps: &mut PAINTSTRUCT) -> std::result::Result<(), String> {
-        let hbr = HBRUSH((COLOR_WINDOW.0 + 1).try_into().unwrap());
-        unsafe { FillRect(ps.hdc, &ps.rcPaint, hbr) };
-        Ok(())
-    }
+    pub painter: Option<Box<dyn Paintable>>,
 }
 
 #[allow(non_snake_case)]
@@ -139,8 +141,10 @@ impl GuiWindow {
         Self {
             width,
             height,
+            hwnd: Default::default(),
             style: WS_OVERLAPPEDWINDOW | WS_VISIBLE,
-            ..Default::default()
+            ex_style: Default::default(),
+            painter: None,
         }
     }
 
@@ -179,6 +183,17 @@ impl GuiWindow {
         Ok(())
     }
 
+    fn on_paint(&self, ps: &mut PAINTSTRUCT) -> std::result::Result<(), String> {
+        if let Some(painter) = self.painter.as_ref() {
+            return painter.paint(ps);
+        }
+
+        // Default
+        let hbr = HBRUSH((COLOR_WINDOW.0 + 1).try_into().unwrap());
+        unsafe { FillRect(ps.hdc, &ps.rcPaint, hbr) };
+        Ok(())
+    }
+
     pub fn run(&self) -> Result<()> {
         let mut message = MSG::default();
 
@@ -187,21 +202,11 @@ impl GuiWindow {
                 if message.message == WM_QUIT {
                     return Ok(());
                 }
-                TranslateMessage(&message);
                 DispatchMessageA(&message);
             }
         }
 
         Ok(())
-    }
-
-    pub fn show(&self) {
-        // unsafe { ShowWindow(self.hwnd, SW_SHOWNOACTIVATE) };
-        unsafe { ShowWindow(self.hwnd, SW_SHOW) };
-    }
-
-    pub fn hide(&self) {
-        unsafe { ShowWindow(self.hwnd, SW_HIDE) };
     }
 
     pub fn send_quit(hwnd: HWND) {
@@ -218,13 +223,28 @@ impl GuiWindow {
                 let ref mut ps = PAINTSTRUCT::default();
                 unsafe {
                     BeginPaint(self.hwnd, ps);
-                    self.paint(ps).unwrap();
+                    self.on_paint(ps).unwrap();
                     EndPaint(self.hwnd, ps);
                 }
                 return LRESULT(0);
             }
             _ => unsafe { DefWindowProcA(self.hwnd, message, wparam, lparam) },
         }
+    }
+}
+
+impl Window for GuiWindow {
+    fn show(&self) {
+        // unsafe { ShowWindow(self.hwnd, SW_SHOWNOACTIVATE) };
+        unsafe { ShowWindow(self.hwnd, SW_SHOW) };
+    }
+
+    fn hide(&self) {
+        unsafe { ShowWindow(self.hwnd, SW_HIDE) };
+    }
+
+    fn set_painter(&mut self, painter: Box<dyn Paintable>) {
+        self.painter = Some(painter);
     }
 }
 
@@ -244,7 +264,8 @@ mod tests {
     #[test]
     fn it_creates_window() {
         let mut class = GuiWindowClass::new("Test window class");
-        let window = class.create_window(300, 300, None, None).unwrap();
+        let hwnd = class.create_window(300, 300, None, None).unwrap();
+        let window = class.get_window(hwnd).unwrap().borrow();
         window.show();
         window.run().unwrap();
     }
@@ -256,8 +277,9 @@ mod tests {
 
         let wnd_thread = std::thread::spawn(move || {
             let mut class = GuiWindowClass::new("Test window class");
-            let window = class.create_window(300, 300, None, None).unwrap();
-            hwnd_clone.store(window.hwnd.0, Ordering::Release);
+            let hwnd = class.create_window(300, 300, None, None).unwrap();
+            hwnd_clone.store(hwnd.0, Ordering::Release);
+            let window = class.get_window(hwnd).unwrap().borrow();
             window.show();
             window.run().unwrap();
         });

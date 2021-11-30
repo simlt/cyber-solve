@@ -1,65 +1,119 @@
-use std::default::Default;
+use std::{
+    cell::{Ref, RefCell, RefMut},
+    default::Default,
+    sync::{
+        atomic::{AtomicIsize, Ordering},
+        Arc,
+    },
+};
 
 use windows::{
     core::Handle,
     Win32::{Foundation::*, Graphics::Gdi::*, UI::WindowsAndMessaging::*},
 };
 
-use super::gui_window::GuiWindowClass;
+use super::gui_window::{GuiWindow, GuiWindowClass, Paintable, Window};
 
-pub(crate) struct OverlayWindow<'a> {
+pub(crate) struct OverlayWindow {
     hwnd: HWND,
     width: i32,
     height: i32,
 
-    // Loaded image bitmap (may be NULL)
-    bmp_info: BITMAPINFO,
-    bmp_pixels: Option<Vec<u8>>,
-
-    window_class: GuiWindowClass<'a>,
-    // window: &GuiWindow<'a>,
+    window_class: GuiWindowClass,
 }
 
-impl<'a> OverlayWindow<'a> {
+impl OverlayWindow {
     fn new(width: i32, height: i32, class_name: &str) -> Self {
         let window_class = GuiWindowClass::new(class_name);
         let mut overlay = Self {
             width,
             height,
-            bmp_info: Default::default(),
-            bmp_pixels: None,
             hwnd: Default::default(),
             window_class,
         };
 
-        let window = overlay
-            .window_class
-            .create_window(overlay.width, overlay.height)
-            .expect("Failed to initialize GuiWindow");
-        overlay.hwnd = window.hwnd;
+        overlay.create_window_and_show();
 
         overlay
     }
 
-    fn init(&'a mut self) -> &'a mut Self {
-        // window.set_painter(&|hdc| self.on_paint(hdc));
-        self
+    fn create_window_and_show(&mut self) -> () {
+        // WS_EX_LAYERED makes window invisible
+        let ex_style = WS_EX_NOACTIVATE | WS_EX_TRANSPARENT | WS_EX_TOPMOST; // | WS_EX_LAYERED;
+        let style = WS_DISABLED;
+        // let style = WS_TILEDWINDOW; // FIXME:
+        let style = WS_OVERLAPPEDWINDOW | WS_VISIBLE; // FIXME:
+        let hwnd = self
+            .window_class
+            .create_window(self.width, self.height, Some(style), Some(ex_style))
+            .expect("Failed to initialize GuiWindow");
+
+        self.hwnd = hwnd;
+
+        self.show();
     }
 
-    pub(crate) fn show(&self) {
-        unsafe { ShowWindow(self.hwnd, SW_SHOWNOACTIVATE) };
-    }
-
-    pub(crate) fn hide(&self) {
-        unsafe { ShowWindow(self.hwnd, SW_HIDE) };
-    }
-
-    pub(crate) fn run(&self) -> Result<(), String> {
-        // self.window.run(); // TODO:
+    pub fn load_bitmap(&mut self, bitmap: &[u8]) -> Result<(), String> {
+        let painter = OverlayWindowPainter::new_from_bitmap(self.hwnd, bitmap)?;
+        let mut window = self.get_window_mut();
+        window.set_painter(Box::new(painter));
         Ok(())
     }
 
-    pub(crate) fn load_bitmap_from_bytes(&mut self, bitmap_bytes: &[u8]) -> Result<(), String> {
+    fn get_window(&self) -> Ref<Box<GuiWindow>> {
+        self.window_class.get_window(self.hwnd).unwrap().borrow()
+    }
+
+    fn get_window_mut(&self) -> RefMut<Box<GuiWindow>> {
+        let window = self.window_class.get_window(self.hwnd).unwrap();
+        let window = RefCell::borrow_mut(window);
+        window
+    }
+
+    pub(crate) fn show(&self) {
+        self.get_window().show();
+    }
+
+    pub(crate) fn hide(&self) {
+        self.get_window().hide();
+    }
+
+    pub(crate) fn run(&self) -> Result<(), String> {
+        if let Err(error) = self.get_window().run() {
+            return Err(error.to_string());
+        }
+        Ok(())
+    }
+}
+
+struct OverlayWindowPainter {
+    hwnd: HWND,
+    // Loaded image bitmap (may be NULL)
+    bmp_info: BITMAPINFO,
+    bmp_pixels: Option<Vec<u8>>,
+}
+
+impl OverlayWindowPainter {
+    fn new(hwnd: HWND) -> Self {
+        Self {
+            hwnd,
+            bmp_info: Default::default(),
+            bmp_pixels: None,
+        }
+    }
+
+    fn new_from_bitmap(hwnd: HWND, bitmap_bytes: &[u8]) -> Result<Self, String> {
+        let mut painter = Self {
+            hwnd,
+            bmp_info: Default::default(),
+            bmp_pixels: None,
+        };
+        painter.load_bitmap_from_bytes(bitmap_bytes)?;
+
+        Ok(painter)
+    }
+
+    fn load_bitmap_from_bytes(&mut self, bitmap_bytes: &[u8]) -> Result<(), String> {
         unsafe {
             let hdc = GetDC(self.hwnd);
             if let Err(err) = hdc.ok() {
@@ -90,8 +144,11 @@ impl<'a> OverlayWindow<'a> {
             Ok(())
         }
     }
+}
 
-    fn on_paint(&self, hdc: HDC) -> Result<(), String> {
+impl Paintable for OverlayWindowPainter {
+    fn paint(&self, ps: &mut PAINTSTRUCT) -> Result<(), String> {
+        let hdc = ps.hdc;
         // Get the client area for size calculation.
         let mut client_rect = RECT::default();
         let result = unsafe { GetClientRect(self.hwnd, &mut client_rect) };
@@ -130,39 +187,52 @@ impl<'a> OverlayWindow<'a> {
     }
 }
 
+struct OverlayController {
+    hwnd: Arc<AtomicIsize>,
+}
+
+impl OverlayController {
+    pub fn run_on_thread(filename: &str) -> Self {
+        let hwnd = Arc::new(AtomicIsize::new(0));
+        let hwnd_clone = hwnd.clone();
+        let bitmap_bytes = std::fs::read(filename).expect("Cannot read test bitmap file");
+
+        let _wnd_thread = std::thread::spawn(move || {
+            let mut overlay = OverlayWindow::new(300, 300, "Test");
+            overlay.load_bitmap(&bitmap_bytes).unwrap();
+            hwnd_clone.store(overlay.hwnd.0, Ordering::Release);
+            overlay.show();
+            overlay.run().unwrap();
+        });
+
+        Self { hwnd }
+    }
+
+    pub fn quit(&self) {
+        let hwnd = HWND(self.hwnd.load(Ordering::Acquire));
+        unsafe { PostMessageW(hwnd, WM_QUIT, None, None) };
+    }
+}
+
 // TESTS
 #[cfg(test)]
 mod tests {
     static FILE_TEST_BMP: &str = "test/sample-bitmap.bmp";
 
-    use std::time::Duration;
+    use std::{thread::sleep, time::Duration};
 
     use super::*;
 
     #[test]
-    fn it_creates_overlay_window() {
-        let window = OverlayWindow::new(300, 300, "Test");
-        window.show();
-        window.run().unwrap();
-
-        // Uncomment me to show window for some time, otherwise test will exit immediately
-        // std::thread::sleep(Duration::from_millis(2000));
+    fn it_creates_overlay() {
+        OverlayWindow::new(300, 300, "Test");
     }
 
     #[test]
     fn it_loads_bitmap() {
-        let wnd_thread = std::thread::spawn(|| {
-            let bitmap_bytes = std::fs::read(FILE_TEST_BMP).expect("Cannot read test bitmap file");
-            let mut window = OverlayWindow::new(300, 300, "Test");
-            // window.init();
+        let overlay = OverlayController::run_on_thread(FILE_TEST_BMP);
 
-            window.load_bitmap_from_bytes(&bitmap_bytes).unwrap();
-            window.show();
-            window.run().unwrap();
-        });
-
-        // Wait for some time, then close window
-        std::thread::sleep(Duration::from_millis(2000));
-        wnd_thread.join().unwrap();
+        sleep(Duration::from_secs(5));
+        overlay.quit();
     }
 }
