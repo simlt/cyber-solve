@@ -32,14 +32,14 @@ impl GuiWindowClass {
         let instance = unsafe { GetModuleHandleA(None) };
         debug_assert!(instance.0 != 0);
 
-        let mut pstr = class_name
+        let pstr = class_name
             .bytes()
             .chain(::std::iter::once(0))
             .collect::<std::vec::Vec<u8>>();
         let wc = WNDCLASSA {
             hCursor: unsafe { LoadCursorW(None, IDC_ARROW) },
             hInstance: instance,
-            lpszClassName: PSTR(pstr.as_mut_ptr()),
+            lpszClassName: PCSTR(pstr.as_ptr()),
 
             style: CS_HREDRAW | CS_VREDRAW,
             lpfnWndProc: Some(Self::wndproc),

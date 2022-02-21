@@ -8,7 +8,6 @@ use std::{
 };
 
 use windows::{
-    core::Handle,
     Win32::{Foundation::*, Graphics::Gdi::*, UI::WindowsAndMessaging::*},
 };
 
