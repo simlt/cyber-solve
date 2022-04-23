@@ -58,13 +58,15 @@ impl GuiWindowClass {
 
     pub fn create_window(
         &mut self,
+        x: i32,
+        y: i32,
         width: i32,
         height: i32,
         style: Option<WINDOW_STYLE>,
         ex_style: Option<WINDOW_EX_STYLE>,
         // painter: Option<Box<dyn Paintable>>,
     ) -> Result<HWND> {
-        let mut window = Box::new(GuiWindow::new(width, height));
+        let mut window = Box::new(GuiWindow::new(x, y, width, height));
         if let Some(style) = style {
             window.style = style;
         }
@@ -87,17 +89,6 @@ impl GuiWindowClass {
 
     pub fn get_window(&self, hwnd: HWND) -> Option<&Rc<RefCell<Box<GuiWindow>>>> {
         self.windows.get(&hwnd.0).map(|w| w)
-    }
-
-    fn run_handler(&self) -> Result<()> {
-        let mut message = MSG::default();
-        unsafe {
-            while GetMessageA(&mut message, HWND(0), 0, 0).into() {
-                DispatchMessageA(&mut message);
-            }
-        }
-
-        Ok(())
     }
 
     unsafe extern "system" fn wndproc(
@@ -125,6 +116,8 @@ impl GuiWindowClass {
 
 pub struct GuiWindow {
     pub hwnd: HWND,
+    pub x: i32,
+    pub y: i32,
     pub width: i32,
     pub height: i32,
     // https://docs.microsoft.com/en-us/windows/win32/winmsg/window-styles
@@ -137,8 +130,10 @@ pub struct GuiWindow {
 
 #[allow(non_snake_case)]
 impl GuiWindow {
-    pub fn new(width: i32, height: i32) -> Self {
+    pub fn new(x: i32, y: i32, width: i32, height: i32) -> Self {
         Self {
+            x,
+            y,
             width,
             height,
             hwnd: Default::default(),
@@ -152,8 +147,8 @@ impl GuiWindow {
         let lpWindowName = class_name.to_owned() + " window";
         let dwExStyle = self.ex_style;
         let dwStyle = self.style;
-        let x = 0;
-        let y = 0;
+        let x = self.x;
+        let y = self.y;
         let nWidth = self.width;
         let nHeight = self.height;
         let hWndParent = None;
@@ -264,7 +259,7 @@ mod tests {
     #[test]
     fn it_creates_window() {
         let mut class = GuiWindowClass::new("Test window class");
-        let hwnd = class.create_window(300, 300, None, None).unwrap();
+        let hwnd = class.create_window(0, 0, 300, 300, None, None).unwrap();
         let window = class.get_window(hwnd).unwrap().borrow();
         window.show();
         window.run().unwrap();
@@ -277,7 +272,7 @@ mod tests {
 
         let wnd_thread = std::thread::spawn(move || {
             let mut class = GuiWindowClass::new("Test window class");
-            let hwnd = class.create_window(300, 300, None, None).unwrap();
+            let hwnd = class.create_window(0, 0, 300, 300, None, None).unwrap();
             hwnd_clone.store(hwnd.0, Ordering::Release);
             let window = class.get_window(hwnd).unwrap().borrow();
             window.show();

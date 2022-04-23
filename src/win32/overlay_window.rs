@@ -7,14 +7,14 @@ use std::{
     },
 };
 
-use windows::{
-    Win32::{Foundation::*, Graphics::Gdi::*, UI::WindowsAndMessaging::*},
-};
+use windows::Win32::{Foundation::*, Graphics::Gdi::*, UI::WindowsAndMessaging::*};
 
 use super::gui_window::{GuiWindow, GuiWindowClass, Paintable, Window};
 
 pub(crate) struct OverlayWindow {
     hwnd: HWND,
+    x: i32,
+    y: i32,
     width: i32,
     height: i32,
 
@@ -22,9 +22,11 @@ pub(crate) struct OverlayWindow {
 }
 
 impl OverlayWindow {
-    fn new(width: i32, height: i32, class_name: &str) -> Self {
+    fn new(x: i32, y: i32, width: i32, height: i32, class_name: &str) -> Self {
         let window_class = GuiWindowClass::new(class_name);
         let mut overlay = Self {
+            x,
+            y,
             width,
             height,
             hwnd: Default::default(),
@@ -38,13 +40,20 @@ impl OverlayWindow {
 
     fn create_window_and_show(&mut self) -> () {
         // WS_EX_LAYERED makes window invisible
-        let ex_style = WS_EX_NOACTIVATE | WS_EX_TRANSPARENT | WS_EX_TOPMOST; // | WS_EX_LAYERED;
+        let ex_style = WS_EX_NOACTIVATE | WS_EX_TRANSPARENT | WS_EX_TOPMOST | WS_EX_LAYERED;
         let style = WS_DISABLED;
-        // let style = WS_TILEDWINDOW; // FIXME:
-        let style = WS_OVERLAPPEDWINDOW | WS_VISIBLE; // FIXME:
+        // let style = WS_TILEDWINDOW;
+        // let style = WS_OVERLAPPEDWINDOW | WS_VISIBLE;
         let hwnd = self
             .window_class
-            .create_window(self.width, self.height, Some(style), Some(ex_style))
+            .create_window(
+                self.x,
+                self.y,
+                self.width,
+                self.height,
+                Some(style),
+                Some(ex_style),
+            )
             .expect("Failed to initialize GuiWindow");
 
         self.hwnd = hwnd;
@@ -186,18 +195,16 @@ impl Paintable for OverlayWindowPainter {
     }
 }
 
-struct OverlayController {
+pub struct OverlayController {
     hwnd: Arc<AtomicIsize>,
 }
 
 impl OverlayController {
-    pub fn run_on_thread(filename: &str) -> Self {
+    pub fn run(x: i32, y: i32, width: i32, height: i32, bitmap_bytes: Vec<u8>) -> Self {
         let hwnd = Arc::new(AtomicIsize::new(0));
         let hwnd_clone = hwnd.clone();
-        let bitmap_bytes = std::fs::read(filename).expect("Cannot read test bitmap file");
-
         let _wnd_thread = std::thread::spawn(move || {
-            let mut overlay = OverlayWindow::new(300, 300, "Test");
+            let mut overlay = OverlayWindow::new(x, y, width, height, "Overlay");
             overlay.load_bitmap(&bitmap_bytes).unwrap();
             hwnd_clone.store(overlay.hwnd.0, Ordering::Release);
             overlay.show();
@@ -224,14 +231,15 @@ mod tests {
 
     #[test]
     fn it_creates_overlay() {
-        OverlayWindow::new(300, 300, "Test");
+        OverlayWindow::new(0, 0, 300, 300, "Test");
     }
 
     #[test]
-    fn it_loads_bitmap() {
-        let overlay = OverlayController::run_on_thread(FILE_TEST_BMP);
+    fn it_loads_bitmap_bytes() {
+        let bitmap_bytes = std::fs::read(FILE_TEST_BMP).expect("Cannot read test bitmap file");
+        let overlay = OverlayController::run(0, 0, 300, 300, bitmap_bytes);
 
-        sleep(Duration::from_secs(5));
+        sleep(Duration::from_secs(3));
         overlay.quit();
     }
 }

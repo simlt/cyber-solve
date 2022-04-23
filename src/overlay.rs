@@ -1,37 +1,19 @@
-use std::env::current_dir;
-use std::io::Error;
-use std::process::Child;
-use std::process::Command;
-use std::time::SystemTime;
-
 use crate::types::PuzzleGrid;
-use crate::utils::lerp_i;
-use crate::utils::Color;
+use crate::utils::{lerp_i, Color};
+use crate::win32::overlay_window::OverlayController;
 use opencv::core as cv;
-use opencv::imgcodecs::imwrite;
+use opencv::imgcodecs::imencode;
+
 use opencv::imgproc;
 use opencv::prelude::*;
-use tempfile;
 
 pub(crate) struct Overlay {
-    pub child_process: Option<Child>,
-    tmp_dir: tempfile::TempDir,
-}
-
-impl Drop for Overlay {
-    fn drop(&mut self) {
-        // Make sure to kill child process on exit, ignore errors
-        let _ = self.kill_overlay_process();
-    }
+    controller: Option<OverlayController>,
 }
 
 impl Overlay {
-    pub(crate) fn new() -> Overlay {
-        let tmp_dir = tempfile::tempdir().expect("Failed to create temp dir");
-        Overlay {
-            tmp_dir,
-            child_process: None,
-        }
+    pub(crate) fn new() -> Self {
+        Self { controller: None }
     }
 
     pub(crate) fn show(&mut self, grid: &PuzzleGrid) -> () {
@@ -48,70 +30,35 @@ impl Overlay {
             Mat::new_rows_cols_with_default(image_height, image_width, cv::CV_8UC4, bg_color)
                 .unwrap();
         draw_grid(&mut img, &grid);
-        let path = self.save_image(&img);
-        self.load_overlay_image(&path, x, y, overlay_width, overlay_height);
+
+        // Encode image bytes to PNG format
+        let mut bytes = cv::Vector::new();
+        let imwrite_flags = cv::Vector::new();
+        imencode(".bmp", &img, &mut bytes, &imwrite_flags).expect("Failed to encode image bytes");
+        let bytes = bytes.to_vec();
+
+        self.load_overlay_image(x, y, overlay_width, overlay_height, bytes);
     }
 
     pub(crate) fn hide(&mut self) -> () {
-        let _ = self.kill_overlay_process();
-    }
-
-    fn load_overlay_image(&mut self, path: &str, x: i32, y: i32, width: i32, height: i32) -> () {
-        let args = [
-            path,
-            &x.to_string(),
-            &y.to_string(),
-            &width.to_string(),
-            &height.to_string(),
-        ];
-        let parent_dir = current_dir().unwrap();
-        let assets_bin = parent_dir.join("assets/bin").canonicalize().unwrap();
-        let overlay_exe_path = assets_bin.join("overlay.exe");
-
-        // println!("{}", assets_bin.display());
-        let process = Command::new(overlay_exe_path)
-            .args(&args)
-            .current_dir(assets_bin)
-            .spawn()
-            .expect("Failed to start overlay process");
-
-        println!(
-            "Started ovelay child process pid: {} with image: {}",
-            process.id(),
-            path
-        );
-
-        // Kill old child process
-        if let Err(err) = self.kill_overlay_process() {
-            println!("Could not kill child process. {}", err.to_string());
+        if let Some(controller) = &self.controller {
+            controller.quit();
+            self.controller = None;
         }
-
-        // Update current child process
-        self.child_process = Some(process);
     }
 
-    fn kill_overlay_process(&mut self) -> Result<(), Error> {
-        if let Some(process) = &mut self.child_process {
-            process.kill()?;
-        }
-        Ok(())
-    }
+    fn load_overlay_image(
+        &mut self,
+        x: i32,
+        y: i32,
+        width: i32,
+        height: i32,
+        bytes: Vec<u8>,
+    ) -> () {
+        let controller = OverlayController::run(x, y, width, height, bytes);
+        println!("Loaded overlay image");
 
-    fn save_image(&self, img: &Mat) -> String {
-        // Save to png image to support alpha channel
-        let now = SystemTime::now()
-            .duration_since(SystemTime::UNIX_EPOCH)
-            .unwrap();
-        let path = self
-            .tmp_dir
-            .path()
-            .join(format!("cybersolve-overlay-{}.png", now.as_secs()));
-        let path_str = path.to_str().unwrap();
-        let imwrite_flags = cv::Vector::new();
-        imwrite(&path_str, img, &imwrite_flags).expect("Failed to write image file");
-        println!("Overlay image saved at \"{}\"", &path_str);
-
-        path_str.to_owned()
+        self.controller = Some(controller);
     }
 }
 
@@ -193,6 +140,9 @@ fn draw_grid(img: &mut Mat, grid: &PuzzleGrid) -> () {
 
 #[cfg(test)]
 mod tests {
+    use std::thread::sleep;
+    use std::time::Duration;
+
     use crate::overlay::*;
     use crate::types::PuzzleGrid;
 
@@ -205,5 +155,7 @@ mod tests {
 
         let mut overlay = Overlay::new();
         overlay.show(&grid);
+        sleep(Duration::from_secs(3));
+        overlay.hide();
     }
 }
