@@ -68,7 +68,7 @@ fn draw_grid(img: &mut Mat, grid: &PuzzleGrid) -> () {
     let height = img.rows();
     let width = img.cols();
     let cyber_yellow = Color::rgba(0xcf, 0xed, 0x56, 0xff).to_bgra(); // #cfed56
-    let thickness = 2;
+    let thickness = 4;
     let line_type = imgproc::LineTypes::LINE_8 as i32;
 
     // Grid size
@@ -106,7 +106,7 @@ fn draw_grid(img: &mut Mat, grid: &PuzzleGrid) -> () {
     // Original font should be Eurocine Narrow. Rajdhani or Noto Sans are a similar alternative
     let font_face = imgproc::FONT_HERSHEY_SIMPLEX;
     let font_scale = 2.0f64;
-    let thickness = 2;
+    let thickness = 4;
     let text_line_type = imgproc::LineTypes::LINE_AA as i32;
     for row in 0..rows {
         let y_offset = lerp_i(0, grid_height - cell_height, row as f64 / (rows - 1) as f64);

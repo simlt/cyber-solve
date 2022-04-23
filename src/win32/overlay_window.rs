@@ -7,9 +7,15 @@ use std::{
     },
 };
 
-use windows::{Win32::{Foundation::*, Graphics::Gdi::*, UI::WindowsAndMessaging::*}, core::Error};
+use windows::{
+    core::Error,
+    Win32::{Foundation::*, Graphics::Gdi::*, UI::WindowsAndMessaging::*},
+};
 
-use super::gui_window::{GuiWindow, GuiWindowClass, Paintable, Window};
+use super::{
+    gui_window::{GuiWindow, GuiWindowClass, Paintable, Window},
+    rgb,
+};
 
 pub(crate) struct OverlayWindow {
     hwnd: HWND,
@@ -40,8 +46,9 @@ impl OverlayWindow {
 
     fn create_window_and_show(&mut self) -> () {
         // WS_EX_LAYERED makes window invisible
-        let ex_style = WS_EX_NOACTIVATE | WS_EX_TRANSPARENT | WS_EX_TOPMOST | WS_EX_LAYERED;
-        let style = WS_DISABLED;
+        // let ex_style = WS_EX_NOACTIVATE | WS_EX_TRANSPARENT | WS_EX_TOPMOST | WS_EX_LAYERED | WS_EX_NOREDIRECTIONBITMAP;
+        let ex_style = WS_EX_NOACTIVATE | WS_EX_TOPMOST | WS_EX_LAYERED;
+        let style = WS_POPUP | WS_DISABLED;
         // let style = WS_TILEDWINDOW;
         // let style = WS_OVERLAPPEDWINDOW | WS_VISIBLE;
         let hwnd = self
@@ -79,7 +86,12 @@ impl OverlayWindow {
     }
 
     pub(crate) fn show(&self) {
-        self.get_window().show();
+        let wnd = self.get_window();
+        wnd.show();
+        // https://docs.microsoft.com/en-us/windows/win32/winmsg/window-features#layered-windows
+        unsafe { SetLayeredWindowAttributes(wnd.hwnd, rgb!(0, 0, 0), 255, LWA_COLORKEY) }
+            .ok()
+            .expect("SetLayeredWindowAttributes error");
     }
 
     pub(crate) fn hide(&self) {
