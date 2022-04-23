@@ -37,7 +37,7 @@ impl GuiWindowClass {
             .chain(::std::iter::once(0))
             .collect::<std::vec::Vec<u8>>();
         let wc = WNDCLASSA {
-            hCursor: unsafe { LoadCursorW(None, IDC_ARROW) },
+            hCursor: unsafe { LoadCursorW(None, IDC_ARROW) }.expect("Failed to load LoadCursorW"),
             hInstance: instance,
             lpszClassName: PCSTR(pstr.as_ptr()),
 
@@ -169,8 +169,7 @@ impl GuiWindow {
                 hInstance,
                 lpParam,
             )
-        }
-        .ok()?;
+        };
 
         // Synchronous WM_NCCREATE message should set self.hwnd
         debug_assert!(handle == self.hwnd);

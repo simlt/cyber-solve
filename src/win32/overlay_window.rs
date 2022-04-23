@@ -7,7 +7,7 @@ use std::{
     },
 };
 
-use windows::Win32::{Foundation::*, Graphics::Gdi::*, UI::WindowsAndMessaging::*};
+use windows::{Win32::{Foundation::*, Graphics::Gdi::*, UI::WindowsAndMessaging::*}, core::Error};
 
 use super::gui_window::{GuiWindow, GuiWindowClass, Paintable, Window};
 
@@ -124,8 +124,8 @@ impl OverlayWindowPainter {
     fn load_bitmap_from_bytes(&mut self, bitmap_bytes: &[u8]) -> Result<(), String> {
         unsafe {
             let hdc = GetDC(self.hwnd);
-            if let Err(err) = hdc.ok() {
-                return Err(err.to_string());
+            if hdc.is_invalid() {
+                return Err(Error::from_win32().message().to_string());
             }
 
             // Read header info
