@@ -1,6 +1,8 @@
-# Install requirements
+# CyberSolve: a rust solver for Cyberpunk 2077 puzzle game
 
-## Windows
+## Install requirements
+
+### Windows
 
 ``` sh
 # Install llvm through chocolatey
@@ -21,7 +23,7 @@ cd C:\src\win32\vcpkg
 .\vcpkg install --triplet=x64-windows-static-md tesseract opencv4[contrib,nonfree] # freetype 
 ```
 
-## Debian/Ubuntu
+### Debian/Ubuntu
 
 ```sh
 # OpenCV deps
@@ -31,7 +33,7 @@ apt-get install libopencv-dev
 apt-get install libleptonica-dev libtesseract-dev clang tesseract-ocr libclang-dev
 ```
 
-## Mac
+### Mac
 
 ```sh
 # OpenCV deps
@@ -41,7 +43,7 @@ brew install opencv llvm pkg-config
 brew install tesseract leptonica
 ```
 
-## Devcontainer cross build (from Mac M1 host)
+### Devcontainer cross build (from Mac M1 host)
 
 ```sh
 # Install x86-64 compiler
@@ -50,7 +52,7 @@ apt install gcc-x86-64-linux-gnu
 rustup target add x86_64-pc-windows-gnu
 ```
 
-## Extra files
+### Extra files
 
 Manually download the following files:
 
@@ -59,3 +61,15 @@ Manually download the following files:
 
 NOTE: to run the executable when using dynamic library builds, it is necessary to place a copy of the dll in the same folder of the executable to be run:
 - `opencv_world4xx.dll`
+
+### Build release archive
+
+```sh
+./publish.sh
+```
+
+The release zip file containing the standalone binary executable will be created in `dist/cyber-solve-release.zip`
+
+### Running
+
+Unzip `cyber-solve-release.zip` and run the `cyber-solve.exe` binary.

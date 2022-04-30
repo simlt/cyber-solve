@@ -15,3 +15,5 @@ target/
 
 # Other
 .DS_Store
+dist/
+tmp/
