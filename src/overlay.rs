@@ -19,10 +19,11 @@ impl Overlay {
     pub(crate) fn show(&mut self, grid: &PuzzleGrid) -> () {
         let x = 852;
         let y = 715;
-        let image_width = 500;
-        let image_height = 500;
-        let overlay_width = 215;
-        let overlay_height = 215;
+        let overlay_width = 216;
+        let overlay_height = 216;
+        let image_upscaling = 2.0;
+        let image_height = (image_upscaling * overlay_height as f64).floor() as i32;
+        let image_width = (image_upscaling * overlay_width as f64).floor() as i32;
 
         // let bg_color = Color::rgba(255,255,255,0).to_bgra();
         let bg_color = Color::rgba(0, 0, 0, 0).to_bgra();
@@ -46,14 +47,7 @@ impl Overlay {
         }
     }
 
-    fn load_overlay_image(
-        &mut self,
-        x: i32,
-        y: i32,
-        width: i32,
-        height: i32,
-        bytes: &[u8],
-    ) -> () {
+    fn load_overlay_image(&mut self, x: i32, y: i32, width: i32, height: i32, bytes: &[u8]) -> () {
         if self.controller.is_none() {
             self.controller = Some(OverlayController::new(x, y, width, height));
             println!("Create new overlay");
