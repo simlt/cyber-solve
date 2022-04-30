@@ -1,3 +1,4 @@
+use std::io::Write;
 use std::{cell::RefCell, collections::HashMap, rc::Rc};
 
 use windows::{
@@ -193,7 +194,8 @@ impl GuiWindow {
 
         unsafe {
             while GetMessageA(&mut message, None, 0, 0).into() {
-                if message.message == WM_QUIT {
+                // writeln!(std::io::stdout(), "Run message {}", message.message).unwrap();
+                if message.message == WM_QUIT || message.message == WM_USER {
                     return Ok(());
                 }
                 DispatchMessageA(&message);
@@ -208,6 +210,7 @@ impl GuiWindow {
     }
 
     fn message_handler(&mut self, message: u32, wparam: WPARAM, lparam: LPARAM) -> LRESULT {
+        // writeln!(std::io::stdout(), "Message handler for {}", message).unwrap();
         match message {
             WM_DESTROY => {
                 unsafe { PostQuitMessage(0) };

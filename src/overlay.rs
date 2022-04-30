@@ -37,13 +37,12 @@ impl Overlay {
         imencode(".bmp", &img, &mut bytes, &imwrite_flags).expect("Failed to encode image bytes");
         let bytes = bytes.to_vec();
 
-        self.load_overlay_image(x, y, overlay_width, overlay_height, bytes);
+        self.load_overlay_image(x, y, overlay_width, overlay_height, &bytes);
     }
 
     pub(crate) fn hide(&mut self) -> () {
         if let Some(controller) = &self.controller {
-            controller.quit();
-            self.controller = None;
+            controller.hide();
         }
     }
 
@@ -53,12 +52,15 @@ impl Overlay {
         y: i32,
         width: i32,
         height: i32,
-        bytes: Vec<u8>,
+        bytes: &[u8],
     ) -> () {
-        let controller = OverlayController::run(x, y, width, height, bytes);
+        if self.controller.is_none() {
+            self.controller = Some(OverlayController::new(x, y, width, height));
+            println!("Create new overlay");
+        }
+        let controller = self.controller.as_ref().unwrap();
+        controller.load(&bytes);
         println!("Loaded overlay image");
-
-        self.controller = Some(controller);
     }
 }
 

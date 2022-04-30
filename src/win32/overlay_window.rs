@@ -2,8 +2,8 @@ use std::{
     cell::{Ref, RefCell, RefMut},
     default::Default,
     sync::{
-        atomic::{AtomicIsize, Ordering},
-        Arc,
+        atomic::{AtomicIsize, Ordering, AtomicBool},
+        Arc, mpsc,
     },
 };
 
@@ -62,6 +62,12 @@ impl OverlayWindow {
                 Some(ex_style),
             )
             .expect("Failed to initialize GuiWindow");
+        
+        // Set transparency
+        // https://docs.microsoft.com/en-us/windows/win32/winmsg/window-features#layered-windows
+        unsafe { SetLayeredWindowAttributes(hwnd, rgb!(0, 0, 0), 255, LWA_COLORKEY) }
+            .ok()
+            .expect("SetLayeredWindowAttributes error");
 
         self.hwnd = hwnd;
 
@@ -86,12 +92,7 @@ impl OverlayWindow {
     }
 
     pub(crate) fn show(&self) {
-        let wnd = self.get_window();
-        wnd.show();
-        // https://docs.microsoft.com/en-us/windows/win32/winmsg/window-features#layered-windows
-        unsafe { SetLayeredWindowAttributes(wnd.hwnd, rgb!(0, 0, 0), 255, LWA_COLORKEY) }
-            .ok()
-            .expect("SetLayeredWindowAttributes error");
+        self.get_window().show();
     }
 
     pub(crate) fn hide(&self) {
@@ -207,23 +208,53 @@ impl Paintable for OverlayWindowPainter {
     }
 }
 
+#[derive(Clone)]
 pub struct OverlayController {
     hwnd: Arc<AtomicIsize>,
+    is_visible: Arc<AtomicBool>,
+    tx: mpsc::Sender<Vec<u8>>,
 }
 
 impl OverlayController {
-    pub fn run(x: i32, y: i32, width: i32, height: i32, bitmap_bytes: Vec<u8>) -> Self {
+    pub fn new(x: i32, y: i32, width: i32, height: i32) -> Self {
         let hwnd = Arc::new(AtomicIsize::new(0));
-        let hwnd_clone = hwnd.clone();
+        let is_visible = Arc::new(AtomicBool::new(false));
+        let (tx, rx) = mpsc::channel::<Vec<u8>>();
+
+        let controller = Self { hwnd, tx, is_visible };
+        let controller_clone = controller.clone();
         let _wnd_thread = std::thread::spawn(move || {
             let mut overlay = OverlayWindow::new(x, y, width, height, "Overlay");
-            overlay.load_bitmap(&bitmap_bytes).unwrap();
-            hwnd_clone.store(overlay.hwnd.0, Ordering::Release);
-            overlay.show();
-            overlay.run().unwrap();
+            controller_clone.hwnd.store(overlay.hwnd.0, Ordering::Release);
+            loop {
+                let bitmap_bytes = rx.recv().unwrap();
+                overlay.load_bitmap(&bitmap_bytes).unwrap();
+                overlay.show();
+                controller_clone.is_visible.store(true, Ordering::Release);
+                // writeln!(std::io::stdout(), "#### SHOW ####").unwrap();
+                overlay.run().unwrap();
+                overlay.hide();
+                // writeln!(std::io::stdout(), "#### HIDE ####").unwrap();
+            }
         });
+        controller
+    }
 
-        Self { hwnd }
+    pub fn load(&self, bitmap_bytes: &[u8]) -> () {
+        self.hide();
+        self.tx.send(bitmap_bytes.to_owned()).expect("Failed to load bitmap");
+    }
+
+    pub fn break_run_thread(&self) {
+        let hwnd = HWND(self.hwnd.load(Ordering::Acquire));
+        // Send custom WM_USER which will break the window.run inside the thread loop
+        unsafe { PostMessageW(hwnd, WM_USER, None, None) };
+    }
+
+    pub fn hide(&self) {
+        if self.is_visible.swap(false, Ordering::AcqRel) {
+            self.break_run_thread();
+        }
     }
 
     pub fn quit(&self) {
@@ -249,7 +280,24 @@ mod tests {
     #[test]
     fn it_loads_bitmap_bytes() {
         let bitmap_bytes = std::fs::read(FILE_TEST_BMP).expect("Cannot read test bitmap file");
-        let overlay = OverlayController::run(0, 0, 300, 300, bitmap_bytes);
+        let overlay = OverlayController::new(0, 0, 300, 300);
+        overlay.load(&bitmap_bytes);
+
+        sleep(Duration::from_secs(3));
+        overlay.quit();
+    }
+
+    #[test]
+    fn it_cycles_show_hide() {
+        let bitmap_bytes = std::fs::read(FILE_TEST_BMP).expect("Cannot read test bitmap file");
+        let overlay = OverlayController::new(0, 0, 300, 300);
+        overlay.load(&bitmap_bytes);
+
+        sleep(Duration::from_secs(1));
+        overlay.hide();
+
+        sleep(Duration::from_secs(1));
+        overlay.load(&bitmap_bytes);
 
         sleep(Duration::from_secs(3));
         overlay.quit();
