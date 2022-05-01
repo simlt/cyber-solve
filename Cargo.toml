@@ -5,6 +5,7 @@ description = "CyberSolve: a rust solver for Cyberpunk 2077 puzzle game"
 authors = ["Simon Mezzomo <simon.mezzomo@gmail.com>"]
 edition = "2021"
 default-run = "cyber-solve"
+license = "MIT"
 
 [[bin]]
 name = "cyber-solve"
