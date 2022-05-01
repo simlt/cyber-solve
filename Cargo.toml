@@ -35,3 +35,6 @@ features = [
     # UI::WindowsAndMessaging::*,
     "Win32_UI_WindowsAndMessaging",
 ]
+
+[build-dependencies]
+embed-resource = "1.7"

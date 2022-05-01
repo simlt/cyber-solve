@@ -43,6 +43,10 @@ fn main() {
 
     println!("cargo:rerun-if-changed=build.rs");
     println!("cargo:rerun-if-changed=assets");
+
+
+    // Embed resource file for icon
+    embed_resource::compile("assets/manifest.rc");
 }
 
 fn get_output_path() -> PathBuf {
